@@ -43,7 +43,7 @@ struct CameraView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            GoalPill()
+            LevelPill()
         }
     }
 
@@ -204,7 +204,7 @@ struct CameraView: View {
             ProfileView()
         } label: {
             HStack(spacing: 12) {
-                Image(systemName: store.currentProfile.goal.icon)
+                Image(systemName: "camera.viewfinder")
                     .foregroundStyle(.white)
                     .frame(width: 36, height: 36)
                     .background(Color.brandPurple, in: Circle())
@@ -232,14 +232,7 @@ struct CameraView: View {
     }
 
     private var profileContextTitle: String {
-        if store.currentProfile.goal == .realLife {
-            return store.appLanguage.text(en: "Filtered by this photo", zh: "按这张照片筛词")
-        }
-
-        return store.appLanguage.text(
-            en: "For your \(store.currentProfile.goal.title(store.appLanguage).lowercased()) focus",
-            zh: "按你的\(store.currentProfile.goal.title(store.appLanguage))侧重推荐"
-        )
+        store.appLanguage.text(en: "Filtered by this photo", zh: "按这张照片筛词")
     }
 
     private var recommendedWords: some View {
@@ -379,14 +372,14 @@ private extension CameraView {
     }
 }
 
-private struct GoalPill: View {
+private struct LevelPill: View {
     @EnvironmentObject private var store: WordStore
 
     var body: some View {
         HStack(spacing: 7) {
-            Image(systemName: store.currentProfile.goal.icon)
+            Image(systemName: "gauge.with.dots.needle.67percent")
                 .font(.caption.weight(.bold))
-            Text(store.currentProfile.goal.title(store.appLanguage))
+            Text(store.currentProfile.level.shortTitle(store.appLanguage))
                 .font(.caption.weight(.semibold))
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)

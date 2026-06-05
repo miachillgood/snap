@@ -2,76 +2,210 @@ import SwiftUI
 
 struct OnboardingView: View {
     @EnvironmentObject private var store: WordStore
-    @State private var step: OnboardingStep = .language
+    @State private var step: OnboardingStep
     @State private var hidesKnownWords = true
     @State private var keepsSceneContext = true
     @State private var confirmsBeforeReview = true
     @State private var knownWords: Set<LevelProbeWord> = []
+    @State private var activeLoginProvider: SignInProvider?
+    @State private var completedLoginProvider: SignInProvider?
+    @State private var showsEmailSignIn = false
+    @State private var emailAddress = ""
+
+    init(startsAtLogin: Bool = true) {
+#if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-previewOnboardingTransit") {
+            _step = State(initialValue: .transitLevel)
+            return
+        }
+
+        if ProcessInfo.processInfo.arguments.contains("-previewOnboardingLevel") {
+            _step = State(initialValue: .level)
+            return
+        }
+#endif
+        _step = State(initialValue: startsAtLogin ? .login : .language)
+    }
+
+#if DEBUG
+    fileprivate init(previewStep: OnboardingStep) {
+        _step = State(initialValue: previewStep)
+    }
+#endif
 
     var body: some View {
         VStack(spacing: 0) {
-            topBar
+            if step != .login {
+                topBar
+            }
+
             TabView(selection: $step) {
+                loginStep.tag(OnboardingStep.login)
                 languageStep.tag(OnboardingStep.language)
                 welcomeStep.tag(OnboardingStep.welcome)
-                filterStep.tag(OnboardingStep.filters)
                 levelStep.tag(OnboardingStep.level)
-                readyStep.tag(OnboardingStep.ready)
+                transitLevelStep.tag(OnboardingStep.transitLevel)
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
-            bottomBar
+
+            if step != .login && !step.isSceneCalibration {
+                bottomBar
+            }
         }
-        .background(onboardingBackground)
+        .background {
+            onboardingBackground.ignoresSafeArea()
+            if step == .login {
+                Color.black
+                    .frame(height: 96)
+                    .frame(maxHeight: .infinity, alignment: .bottom)
+                    .ignoresSafeArea(edges: .bottom)
+            }
+        }
+        .sheet(isPresented: $showsEmailSignIn) {
+            EmailSignInSheet(
+                emailAddress: $emailAddress,
+                isLoading: activeLoginProvider == .email
+            ) { email in
+                startSignIn(with: .email, email: email)
+            }
+            .presentationDetents([.height(294)])
+        }
     }
 
     private var topBar: some View {
-        HStack {
-            Button {
-                goBack()
-            } label: {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 17, weight: .medium))
-                    .foregroundStyle(.black.opacity(step == .language ? 0.32 : 0.72))
-                    .frame(width: 38, height: 38)
-            }
-            .buttonStyle(.plain)
-            .disabled(step == .language)
-
-            Spacer()
-
-            if step != .language && step != .welcome {
-                Menu {
-                    ForEach(AppLanguage.allCases) { language in
-                        Button {
-                            store.appLanguage = language
-                        } label: {
-                            Label(
-                                language.title,
-                                systemImage: store.appLanguage == language ? "checkmark" : "circle"
-                            )
-                        }
-                    }
+        ZStack {
+            HStack {
+                Button {
+                    goBack()
                 } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "globe")
-                        Text(store.appLanguage.shortTitle)
-                        Image(systemName: "chevron.down")
-                            .font(.caption2.weight(.bold))
-                    }
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Color.brandPurple)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 7)
-                    .background(Color.brandPurple.opacity(0.1), in: Capsule())
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 17, weight: .medium))
+                        .foregroundStyle(.black.opacity(step == .login ? 0.32 : 0.72))
+                        .frame(width: 38, height: 38)
                 }
-            } else {
-                Color.clear
-                    .frame(width: 38, height: 38)
+                .buttonStyle(.plain)
+                .disabled(step == .login)
+
+                Spacer()
+
+                topBarTrailingControl
+            }
+
+            if step.isSceneCalibration {
+                flowProgressIndicator
             }
         }
         .padding(.horizontal, 22)
         .padding(.top, 8)
         .padding(.bottom, 2)
+    }
+
+    @ViewBuilder
+    private var topBarTrailingControl: some View {
+        if step != .login && step != .language && step != .welcome && !step.isSceneCalibration {
+            Menu {
+                ForEach(AppLanguage.allCases) { language in
+                    Button {
+                        store.appLanguage = language
+                    } label: {
+                        Label(
+                            language.title,
+                            systemImage: store.appLanguage == language ? "checkmark" : "circle"
+                        )
+                    }
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "globe")
+                    Text(store.appLanguage.shortTitle)
+                    Image(systemName: "chevron.down")
+                        .font(.caption2.weight(.bold))
+                }
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Color.brandPurple)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(Color.brandPurple.opacity(0.1), in: Capsule())
+            }
+        } else {
+            Color.clear
+                .frame(width: 38, height: 38)
+        }
+    }
+
+    private var flowProgressIndicator: some View {
+        HStack(spacing: 6) {
+            ForEach(OnboardingStep.flowSteps) { item in
+                Capsule()
+                    .fill(item == step ? Color.brandPurple : Color.secondary.opacity(0.22))
+                    .frame(width: item == step ? 24 : 7, height: 7)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(.white.opacity(0.34), in: Capsule())
+    }
+
+    private var loginStep: some View {
+        GeometryReader { proxy in
+            let safeTop = proxy.safeAreaInsets.top
+            let safeBottom = proxy.safeAreaInsets.bottom
+            let heroHeight = max(proxy.size.height - 356, 286)
+            let demoHeight = min(max(heroHeight * 0.64, 220), 304)
+
+            ZStack(alignment: .bottom) {
+                LoginAmbientBackground()
+                Color.black
+                    .frame(height: max(safeBottom, 34) + 24)
+                    .frame(maxHeight: .infinity, alignment: .bottom)
+                    .ignoresSafeArea(edges: .bottom)
+
+                VStack(spacing: 0) {
+                    VStack(spacing: 18) {
+                        HStack(spacing: 10) {
+                            OnboardingBrandMark()
+                                .scaleEffect(0.74)
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("SeenWords")
+                                    .font(.system(size: 21, weight: .bold, design: .serif))
+                                    .foregroundStyle(.black.opacity(0.86))
+                                Text("Real-world English")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(.black.opacity(0.48))
+                            }
+
+                            Spacer()
+                        }
+                        .padding(.horizontal, 28)
+                        .padding(.top, safeTop + 12)
+
+                        AnimatedScanDemo(largeHeight: demoHeight)
+                            .padding(.horizontal, 20)
+                            .shadow(color: .black.opacity(0.18), radius: 22, y: 16)
+
+                        Spacer(minLength: 8)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: heroHeight)
+
+                    LoginPanel(
+                        safeBottom: safeBottom,
+                        activeProvider: activeLoginProvider,
+                        completedProvider: completedLoginProvider
+                    ) { provider in
+                        if provider == .email {
+                            showsEmailSignIn = true
+                        } else {
+                            startSignIn(with: provider)
+                        }
+                    } existingAccountAction: {
+                        showsEmailSignIn = true
+                    }
+                }
+            }
+        }
+        .ignoresSafeArea(.container, edges: .bottom)
     }
 
     private var languageStep: some View {
@@ -140,111 +274,29 @@ struct OnboardingView: View {
         .background(onboardingBackground)
     }
 
-    private var filterStep: some View {
-        OnboardingShell(
-            icon: "slider.horizontal.3",
-            title: store.appLanguage.text(en: "Let each photo decide the scene.", zh: "让每张照片决定场景。"),
-            subtitle: store.appLanguage.text(en: "Living abroad means English can appear anywhere. Set how SeenWords filters each photo instead.", zh: "在国外生活，英语可能出现在任何地方。这里先设置每张照片要怎么筛词。")
-        ) {
-            VStack(spacing: 0) {
-                PreferenceToggleRow(
-                    symbol: "eye.slash.fill",
-                    title: store.appLanguage.text(en: "Hide obvious words", zh: "隐藏太简单的词"),
-                    subtitle: store.appLanguage.text(en: "Keep review focused on words worth learning.", zh: "复习时优先留下真正值得学的词。"),
-                    isOn: $hidesKnownWords
-                )
-                Divider()
-                    .padding(.leading, 58)
-                PreferenceToggleRow(
-                    symbol: "photo.on.rectangle.angled",
-                    title: store.appLanguage.text(en: "Keep the original context", zh: "保留原照片上下文"),
-                    subtitle: store.appLanguage.text(en: "Review words with the photo and line you saw.", zh: "复习时看到原照片和原句。"),
-                    isOn: $keepsSceneContext
-                )
-                Divider()
-                    .padding(.leading, 58)
-                PreferenceToggleRow(
-                    symbol: "checklist.checked",
-                    title: store.appLanguage.text(en: "Confirm before review", zh: "复习前先确认"),
-                    subtitle: store.appLanguage.text(en: "Choose which extracted words should enter review.", zh: "从识别结果里挑出要复习的词。"),
-                    isOn: $confirmsBeforeReview
-                )
-            }
-            .background(.background, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        }
-    }
-
     private var levelStep: some View {
-        OnboardingShell(
-            icon: "text.badge.checkmark",
-            title: store.appLanguage.text(en: "Mark words that are already too easy.", zh: "标出已经太简单的词。"),
-            subtitle: store.appLanguage.text(en: "These examples help SeenWords avoid showing beginner words again and again.", zh: "这些例子会帮 SeenWords 少反复提示入门词。")
-        ) {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 8) {
-                    Image(systemName: "eye.slash.fill")
-                        .foregroundStyle(Color.brandPurple)
-                    Text(store.appLanguage.text(en: "\(knownWords.count) words will stay out of review", zh: "\(knownWords.count) 个词会先隐藏"))
-                        .font(.subheadline.weight(.semibold))
-                    Spacer()
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 11)
-                .background(Color.brandPurple.opacity(0.1), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-
-                VStack(spacing: 0) {
-                    ForEach(Array(SampleData.levelProbeWords.enumerated()), id: \.element.id) { index, word in
-                        Button {
-                            toggleKnownWord(word)
-                        } label: {
-                            ProbeWordRow(word: word, isSelected: knownWords.contains(word))
-                        }
-                        .buttonStyle(.plain)
-
-                        if index < SampleData.levelProbeWords.count - 1 {
-                            Divider()
-                                .padding(.leading, 58)
-                        }
-                    }
-                }
-                .background(.background, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            }
-        }
+        SceneVocabularyCalibrationView(
+            language: store.appLanguage,
+            scene: .ordering,
+            knownWords: $knownWords,
+            actionTitle: primaryButtonTitle,
+            action: advance
+        )
     }
 
-    private var readyStep: some View {
-        OnboardingShell(
-            icon: "sparkles",
-            title: store.appLanguage.text(en: "Ready to scan real English.", zh: "可以开始拍真实英语了。"),
-            subtitle: store.appLanguage.text(en: "Your photos will set the situation. SeenWords will help choose what is worth reviewing.", zh: "场景由照片决定；SeenWords 帮你筛出更值得复习的词。")
-        ) {
-            VStack(spacing: 12) {
-                SummaryPill(
-                    symbol: "globe",
-                    title: store.appLanguage.title,
-                    subtitle: store.appLanguage.text(en: "Interface language", zh: "界面语言")
-                )
-                SummaryPill(
-                    symbol: "eye.slash",
-                    title: store.appLanguage.text(en: "\(knownWords.count) easy words hidden", zh: "已隐藏 \(knownWords.count) 个简单词"),
-                    subtitle: inferredLevel.shortTitle(store.appLanguage)
-                )
-                SummaryPill(
-                    symbol: keepsSceneContext ? "photo.on.rectangle.angled" : "text.page",
-                    title: keepsSceneContext
-                        ? store.appLanguage.text(en: "Photo context stays attached", zh: "保留照片上下文")
-                        : store.appLanguage.text(en: "Words only", zh: "只保留单词"),
-                    subtitle: confirmsBeforeReview
-                        ? store.appLanguage.text(en: "You choose words before review", zh: "复习前由你确认词")
-                        : store.appLanguage.text(en: "Recommended words enter review faster", zh: "推荐词更快进入复习")
-                )
-            }
-        }
+    private var transitLevelStep: some View {
+        SceneVocabularyCalibrationView(
+            language: store.appLanguage,
+            scene: .transit,
+            knownWords: $knownWords,
+            actionTitle: primaryButtonTitle,
+            action: advance
+        )
     }
 
     private var bottomBar: some View {
         VStack(spacing: 14) {
-            if step != .language {
+            if step != .login && step != .language {
                 HStack(spacing: 6) {
                     ForEach(OnboardingStep.flowSteps) { item in
                         Capsule()
@@ -275,7 +327,7 @@ struct OnboardingView: View {
                 } label: {
                     HStack {
                         Text(primaryButtonTitle)
-                        Image(systemName: step == .ready ? "checkmark" : "arrow.right")
+                        Image(systemName: "arrow.right")
                     }
                     .font(.headline)
                     .frame(maxWidth: .infinity)
@@ -285,21 +337,29 @@ struct OnboardingView: View {
                 .tint(.brandPurple)
             }
         }
-        .padding(20)
+        .padding(.horizontal, 20)
+        .padding(.top, 20)
+        .padding(.bottom, step == .level ? 12 : 20)
     }
 
     private var primaryButtonTitle: String {
         switch step {
+        case .login: "Continue"
         case .language: "Next"
         case .welcome: store.appLanguage.text(en: "Next", zh: "下一步")
-        case .filters: store.appLanguage.text(en: "Next", zh: "下一步")
-        case .level: store.appLanguage.text(en: "Set my level", zh: "设置水平")
-        case .ready: store.appLanguage.text(en: "Open SeenWords", zh: "进入 SeenWords")
+        case .level, .transitLevel: "Next"
         }
     }
 
     private var onboardingBackground: Color {
-        step == .language || step == .welcome ? .onboardingCanvas : .softBackground
+        switch step {
+        case .login, .language, .welcome:
+            .onboardingCanvas
+        case .level:
+            .sceneOrange
+        case .transitLevel:
+            .sceneTransitBlue
+        }
     }
 
     private var languageOptions: [LanguageOption] {
@@ -314,31 +374,50 @@ struct OnboardingView: View {
 
     private var inferredLevel: EnglishLevel {
         let score = knownWords.count
-        if score <= 2 { return .gettingStarted }
-        if score <= 5 { return .everyday }
-        if score <= 8 { return .working }
+        if score <= 8 { return .gettingStarted }
+        if score <= 18 { return .everyday }
+        if score <= 30 { return .working }
         return .confident
     }
 
-    private func toggleKnownWord(_ word: LevelProbeWord) {
-        if knownWords.contains(word) {
-            knownWords.remove(word)
-        } else {
-            knownWords.insert(word)
+    private var knownWordsSummaryTitle: String {
+        let wordLabel = knownWords.count == 1 ? "word" : "words"
+        return store.appLanguage.text(en: "\(knownWords.count) easy \(wordLabel) hidden", zh: "已隐藏 \(knownWords.count) 个简单词")
+    }
+
+    private func startSignIn(with provider: SignInProvider, email: String? = nil) {
+        guard activeLoginProvider == nil else { return }
+
+        activeLoginProvider = provider
+        completedLoginProvider = nil
+
+        Task { @MainActor in
+            let delay: UInt64 = provider == .email ? 520_000_000 : 720_000_000
+            try? await Task.sleep(nanoseconds: delay)
+            store.signIn(provider: provider, email: email)
+
+            completedLoginProvider = provider
+            activeLoginProvider = nil
+            showsEmailSignIn = false
+
+            try? await Task.sleep(nanoseconds: 360_000_000)
+            advance()
+            completedLoginProvider = nil
         }
     }
 
     private func advance() {
         switch step {
+        case .login:
+            guard store.isSignedIn else { return }
+            withAnimation(.snappy) { step = .language }
         case .language:
             withAnimation(.snappy) { step = .welcome }
         case .welcome:
-            withAnimation(.snappy) { step = .filters }
-        case .filters:
             withAnimation(.snappy) { step = .level }
         case .level:
-            withAnimation(.snappy) { step = .ready }
-        case .ready:
+            withAnimation(.snappy) { step = .transitLevel }
+        case .transitLevel:
             store.completeOnboarding(
                 level: inferredLevel,
                 goal: .realLife,
@@ -352,31 +431,35 @@ struct OnboardingView: View {
 
     private func goBack() {
         switch step {
-        case .language:
+        case .login:
             break
+        case .language:
+            withAnimation(.snappy) { step = .login }
         case .welcome:
             withAnimation(.snappy) { step = .language }
-        case .filters:
-            withAnimation(.snappy) { step = .welcome }
         case .level:
-            withAnimation(.snappy) { step = .filters }
-        case .ready:
+            withAnimation(.snappy) { step = .welcome }
+        case .transitLevel:
             withAnimation(.snappy) { step = .level }
         }
     }
 }
 
 private enum OnboardingStep: Int, CaseIterable, Identifiable {
+    case login
     case language
     case welcome
-    case filters
     case level
-    case ready
+    case transitLevel
 
     var id: Int { rawValue }
 
+    var isSceneCalibration: Bool {
+        self == .level || self == .transitLevel
+    }
+
     static var flowSteps: [OnboardingStep] {
-        [.welcome, .filters, .level, .ready]
+        [.welcome, .level, .transitLevel]
     }
 }
 
@@ -386,6 +469,668 @@ private struct LanguageOption: Identifiable {
     let title: String
 
     var id: AppLanguage { language }
+}
+
+private struct SceneVocabularyScene {
+    let sceneNumber: String
+    let title: String
+    let highlightColor: Color
+    let backgroundColor: Color
+    let imageName: String
+    let words: [LevelProbeWord]
+
+    static let ordering = SceneVocabularyScene(
+        sceneNumber: "01",
+        title: "ORDERING",
+        highlightColor: Color(red: 0.89, green: 0.686, blue: 0.22),
+        backgroundColor: .sceneOrange,
+        imageName: "CafeOrderingFox",
+        words: SceneProbeData.cafeWords
+    )
+
+    static let transit = SceneVocabularyScene(
+        sceneNumber: "02",
+        title: "TRAFFIC",
+        highlightColor: Color(red: 0.08, green: 0.52, blue: 0.66),
+        backgroundColor: .sceneTransitBlue,
+        imageName: "TrafficScene",
+        words: SceneProbeData.transitWords
+    )
+}
+
+private enum SceneProbeData {
+    static let cafeWords: [LevelProbeWord] = [
+        LevelProbeWord(text: "appetizer", category: .food, difficulty: 4),
+        LevelProbeWord(text: "main", category: .food, difficulty: 2),
+        LevelProbeWord(text: "side", category: .food, difficulty: 3),
+        LevelProbeWord(text: "combo", category: .food, difficulty: 4),
+        LevelProbeWord(text: "portion", category: .food, difficulty: 4),
+        LevelProbeWord(text: "spicy", category: .food, difficulty: 2),
+        LevelProbeWord(text: "mild", category: .food, difficulty: 3),
+        LevelProbeWord(text: "crispy", category: .food, difficulty: 4),
+        LevelProbeWord(text: "grilled", category: .food, difficulty: 4),
+        LevelProbeWord(text: "fried", category: .food, difficulty: 3),
+        LevelProbeWord(text: "poached", category: .food, difficulty: 5),
+        LevelProbeWord(text: "scrambled", category: .food, difficulty: 5),
+        LevelProbeWord(text: "dressing", category: .food, difficulty: 4),
+        LevelProbeWord(text: "topping", category: .food, difficulty: 4),
+        LevelProbeWord(text: "refill", category: .food, difficulty: 4),
+        LevelProbeWord(text: "takeaway", category: .work, difficulty: 3),
+        LevelProbeWord(text: "dine-in", category: .work, difficulty: 3),
+        LevelProbeWord(text: "surcharge", category: .food, difficulty: 4),
+        LevelProbeWord(text: "dairy-free", category: .food, difficulty: 5),
+        LevelProbeWord(text: "gluten-free", category: .food, difficulty: 5)
+    ]
+
+    static let transitWords: [LevelProbeWord] = [
+        LevelProbeWord(text: "platform", translation: "站台", category: .transport, difficulty: 3),
+        LevelProbeWord(text: "stop", translation: "站点", category: .transport, difficulty: 2),
+        LevelProbeWord(text: "route", translation: "路线", category: .transport, difficulty: 3),
+        LevelProbeWord(text: "transfer", translation: "换乘", category: .transport, difficulty: 4),
+        LevelProbeWord(text: "fare", translation: "票价", category: .transport, difficulty: 4),
+        LevelProbeWord(text: "ticket", translation: "票", category: .transport, difficulty: 2),
+        LevelProbeWord(text: "pass", translation: "通票/月票", category: .transport, difficulty: 3),
+        LevelProbeWord(text: "timetable", translation: "时刻表", category: .transport, difficulty: 5),
+        LevelProbeWord(text: "departure", translation: "出发", category: .transport, difficulty: 4),
+        LevelProbeWord(text: "arrival", translation: "到达", category: .transport, difficulty: 4),
+        LevelProbeWord(text: "delay", translation: "延误", category: .transport, difficulty: 3),
+        LevelProbeWord(text: "cancelled", translation: "取消", category: .transport, difficulty: 4),
+        LevelProbeWord(text: "boarding", translation: "登车/登机", category: .transport, difficulty: 4),
+        LevelProbeWord(text: "gate", translation: "登机口", category: .transport, difficulty: 3),
+        LevelProbeWord(text: "terminal", translation: "航站楼", category: .transport, difficulty: 4),
+        LevelProbeWord(text: "luggage", translation: "行李", category: .transport, difficulty: 3),
+        LevelProbeWord(text: "pedestrian", translation: "行人", category: .transport, difficulty: 5),
+        LevelProbeWord(text: "crossing", translation: "人行横道", category: .transport, difficulty: 4),
+        LevelProbeWord(text: "detour", translation: "绕路", category: .transport, difficulty: 5),
+        LevelProbeWord(text: "tow-away", translation: "拖车移走", category: .transport, difficulty: 5)
+    ]
+}
+
+private struct SceneVocabularyCalibrationView: View {
+    let language: AppLanguage
+    let scene: SceneVocabularyScene
+    @Binding var knownWords: Set<LevelProbeWord>
+    let actionTitle: String
+    let action: () -> Void
+
+    var body: some View {
+        GeometryReader { proxy in
+            let width = proxy.size.width
+            let height = proxy.size.height
+            let imageHeight = min(max(height * 0.58, 340), 430)
+            let fadeHeight = min(max(imageHeight * 0.94, 342), 410)
+            let foxReserve = min(max(imageHeight * 0.62, 248), 304)
+            let availableListHeight = height - foxReserve - 140
+            let wordRowHeight = CGFloat(44)
+            let wordRowSpacing = CGFloat(8)
+            let wordGridTopPadding = CGFloat(18)
+            let wordGridBottomPadding = CGFloat(22)
+            let wordGridHorizontalPadding = CGFloat(32)
+            let wordRowCount = max((scene.words.count + 1) / 2, 1)
+            let availableFullRows = Int((max(availableListHeight, 322) - wordGridTopPadding + wordRowSpacing) / (wordRowHeight + wordRowSpacing))
+            let visibleRowCount = min(wordRowCount, max(availableFullRows + 1, 7))
+            let wordListHeight = wordGridTopPadding + CGFloat(visibleRowCount) * wordRowHeight + CGFloat(max(visibleRowCount - 1, 0)) * wordRowSpacing
+
+            ZStack(alignment: .bottom) {
+                scene.backgroundColor
+                    .ignoresSafeArea()
+
+                VStack(spacing: 0) {
+                    header
+                        .padding(.horizontal, 24)
+                        .padding(.top, 12)
+
+                    ScrollView(.vertical, showsIndicators: false) {
+                        AlternatingSceneWordGrid(
+                            words: scene.words,
+                            knownWords: knownWords,
+                            rowHeight: wordRowHeight,
+                            action: toggleKnownWord
+                        )
+                        .padding(.top, wordGridTopPadding)
+                        .padding(.bottom, wordGridBottomPadding)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: wordListHeight)
+                    .padding(.horizontal, wordGridHorizontalPadding)
+
+                    Spacer(minLength: 0)
+                }
+
+                wordFadeVeil(height: fadeHeight)
+
+                VStack(spacing: 8) {
+                    Spacer(minLength: 0)
+
+                    foxArtwork(width: min(width * 1.12, 430), height: imageHeight)
+                        .offset(y: 54)
+                        .allowsHitTesting(false)
+
+                    sceneNextButton
+                }
+                .padding(.bottom, 14)
+            }
+            .frame(width: width, height: height)
+            .clipped()
+        }
+        .background(scene.backgroundColor)
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 0) {
+                Text("Scene \(scene.sceneNumber) ")
+                    .foregroundStyle(.white)
+                    .shadow(color: .black.opacity(0.24), radius: 6, y: 2)
+                Text(scene.title)
+                    .foregroundStyle(scene.highlightColor)
+            }
+            .font(.system(size: 30, weight: .bold, design: .serif))
+            .fixedSize(horizontal: false, vertical: true)
+
+            Text("tap the word you know")
+                .font(.system(size: 20, weight: .semibold, design: .serif))
+                .foregroundStyle(.white)
+                .shadow(color: .black.opacity(0.16), radius: 4, y: 1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var selectedWordCount: Int {
+        scene.words.filter { knownWords.contains($0) }.count
+    }
+
+    private var selectedWordProgressText: String {
+        "\(selectedWordCount)/\(scene.words.count)"
+    }
+
+    private var sceneNextButton: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Text(actionTitle)
+                Image(systemName: "arrow.right")
+            }
+            .font(.system(size: 15, weight: .bold))
+            .foregroundStyle(Color(red: 0.96, green: 0.86, blue: 0.52))
+            .frame(width: 146, height: 46)
+            .background(Color(red: 0.12, green: 0.11, blue: 0.1), in: Capsule())
+            .shadow(color: .black.opacity(0.12), radius: 11, y: 6)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func foxArtwork(width: CGFloat, height: CGFloat) -> some View {
+        ZStack(alignment: .top) {
+            SceneCalibrationIllustration(imageName: scene.imageName, width: width, height: height)
+
+            Text(selectedWordProgressText)
+                .font(.system(size: 12, weight: .black, design: .rounded))
+                .foregroundStyle(Color.black.opacity(0.62))
+                .padding(.top, height * 0.43)
+        }
+        .frame(width: width, height: height, alignment: .bottom)
+    }
+
+    private func toggleKnownWord(_ word: LevelProbeWord) {
+        withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) {
+            if knownWords.contains(word) {
+                knownWords.remove(word)
+            } else {
+                knownWords.insert(word)
+            }
+        }
+    }
+
+    private func wordFadeVeil(height: CGFloat) -> some View {
+        ZStack {
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .opacity(0.68)
+
+            LinearGradient(
+                stops: [
+                    .init(color: scene.backgroundColor.opacity(0), location: 0),
+                    .init(color: scene.backgroundColor.opacity(0.74), location: 0.22),
+                    .init(color: scene.backgroundColor.opacity(0.96), location: 1)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        }
+        .mask(
+            LinearGradient(
+                stops: [
+                    .init(color: .clear, location: 0),
+                    .init(color: .black.opacity(0.68), location: 0.14),
+                    .init(color: .black, location: 1)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
+        .frame(height: height)
+        .frame(maxHeight: .infinity, alignment: .bottom)
+        .allowsHitTesting(false)
+    }
+}
+
+private struct AlternatingSceneWordGrid: View {
+    let words: [LevelProbeWord]
+    let knownWords: Set<LevelProbeWord>
+    var rowHeight: CGFloat = 44
+    let action: (LevelProbeWord) -> Void
+
+    private var rowCount: Int {
+        max((words.count + 1) / 2, 1)
+    }
+
+    var body: some View {
+        LazyVStack(spacing: 8) {
+            ForEach(0..<rowCount, id: \.self) { row in
+                HStack(spacing: 14) {
+                    cell(for: row * 2, alignment: .leading)
+                    cell(for: row * 2 + 1, alignment: .trailing)
+                }
+                .frame(height: rowHeight)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func cell(for index: Int, alignment: Alignment) -> some View {
+        if words.indices.contains(index) {
+            FloatingSceneWordButton(
+                word: words[index],
+                isSelected: knownWords.contains(words[index]),
+                height: rowHeight,
+                fontSize: 13,
+                maxWidth: 164
+            ) {
+                action(words[index])
+            }
+            .frame(maxWidth: .infinity, alignment: alignment)
+        } else {
+            Color.clear
+                .frame(maxWidth: .infinity)
+        }
+    }
+}
+
+private struct SceneCalibrationIllustration: View {
+    let imageName: String
+    let width: CGFloat
+    let height: CGFloat
+
+    var body: some View {
+        Image(imageName)
+            .resizable()
+            .aspectRatio(contentMode: .fit)
+            .frame(width: width, height: height, alignment: .bottom)
+    }
+}
+
+private struct FloatingSceneWordButton: View {
+    let word: LevelProbeWord
+    let isSelected: Bool
+    var height: CGFloat = 40
+    var fontSize: CGFloat = 14
+    var maxWidth: CGFloat = 140
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 7) {
+                Text(word.text)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.78)
+
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 11, weight: .black))
+                }
+            }
+            .font(.system(size: fontSize, weight: .bold))
+            .foregroundStyle(isSelected ? .white : .black.opacity(0.82))
+            .padding(.horizontal, horizontalPadding)
+            .frame(height: height)
+            .frame(maxWidth: maxWidth)
+            .background(
+                isSelected
+                    ? Color.brandPurple
+                    : Color.white.opacity(0.84),
+                in: Capsule()
+            )
+            .overlay {
+                Capsule()
+                    .stroke(isSelected ? .white.opacity(0.45) : .white.opacity(0.62), lineWidth: 1)
+            }
+            .scaleEffect(isSelected ? selectedScale : 1)
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(word.text)
+    }
+
+    private var horizontalPadding: CGFloat {
+        if height < 34 {
+            return isSelected ? 9 : 10
+        }
+        return isSelected ? 13 : 14
+    }
+
+    private var selectedScale: CGFloat {
+        height < 34 ? 1.02 : 1.06
+    }
+}
+
+private struct LoginAmbientBackground: View {
+    var body: some View {
+        GeometryReader { proxy in
+            let width = proxy.size.width
+            let height = proxy.size.height
+
+            ZStack {
+                LinearGradient(
+                    colors: [
+                        Color(red: 0.78, green: 0.91, blue: 0.43),
+                        Color(red: 0.94, green: 0.87, blue: 0.62),
+                        Color(red: 0.76, green: 0.68, blue: 0.96)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+
+                VStack(spacing: 16) {
+                    ForEach(0..<6) { index in
+                        RoundedRectangle(cornerRadius: 24, style: .continuous)
+                            .stroke(.white.opacity(index.isMultiple(of: 2) ? 0.16 : 0.08), lineWidth: 1)
+                            .frame(width: width * 0.96, height: 54)
+                            .offset(x: index.isMultiple(of: 2) ? -24 : 30)
+                    }
+                }
+                .rotationEffect(.degrees(-18))
+                .position(x: width * 0.48, y: height * 0.2)
+
+                RoundedRectangle(cornerRadius: 44, style: .continuous)
+                    .fill(.white.opacity(0.2))
+                    .frame(width: width * 0.82, height: height * 0.68)
+                    .rotationEffect(.degrees(9))
+                    .position(x: width * 0.54, y: height * 0.38)
+                    .blur(radius: 0.5)
+
+                LinearGradient(
+                    colors: [.clear, Color.black.opacity(0.16)],
+                    startPoint: .center,
+                    endPoint: .bottom
+                )
+            }
+        }
+        .ignoresSafeArea()
+    }
+}
+
+private struct LoginPanel: View {
+    let safeBottom: CGFloat
+    let activeProvider: SignInProvider?
+    let completedProvider: SignInProvider?
+    let action: (SignInProvider) -> Void
+    let existingAccountAction: () -> Void
+
+    private var isBusy: Bool {
+        activeProvider != nil
+    }
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Text("Learn the English\nyou saw today")
+                .font(.system(size: 26, weight: .semibold, design: .serif))
+                .foregroundStyle(.white)
+                .multilineTextAlignment(.center)
+                .lineSpacing(1)
+                .lineLimit(2)
+                .minimumScaleFactor(0.82)
+                .fixedSize(horizontal: false, vertical: true)
+                .layoutPriority(1)
+                .padding(.bottom, 6)
+
+            LoginOptionButton(
+                provider: .apple,
+                isLoading: activeProvider == .apple,
+                isComplete: completedProvider == .apple,
+                isDisabled: isBusy && activeProvider != .apple
+            ) {
+                action(.apple)
+            }
+
+            LoginOptionButton(
+                provider: .google,
+                isLoading: activeProvider == .google,
+                isComplete: completedProvider == .google,
+                isDisabled: isBusy && activeProvider != .google
+            ) {
+                action(.google)
+            }
+
+            LoginOptionButton(
+                provider: .email,
+                isLoading: activeProvider == .email,
+                isComplete: completedProvider == .email,
+                isDisabled: isBusy && activeProvider != .email
+            ) {
+                action(.email)
+            }
+
+            HStack(spacing: 5) {
+                Text("Already have an account?")
+                    .foregroundStyle(.white.opacity(0.78))
+
+                Button {
+                    existingAccountAction()
+                } label: {
+                    Text("Log in here")
+                        .fontWeight(.bold)
+                        .foregroundStyle(.white)
+                        .underline()
+                }
+                .buttonStyle(.plain)
+                .disabled(isBusy)
+            }
+            .font(.system(size: 12, weight: .semibold))
+            .padding(.top, 4)
+        }
+        .padding(.horizontal, 38)
+        .padding(.bottom, max(safeBottom, 12) + 16)
+        .frame(maxWidth: .infinity)
+        .frame(height: 356, alignment: .bottom)
+        .background(
+            LinearGradient(
+                stops: [
+                    .init(color: .black.opacity(0), location: 0),
+                    .init(color: .black.opacity(0.48), location: 0.22),
+                    .init(color: .black.opacity(0.9), location: 0.52),
+                    .init(color: .black, location: 0.82),
+                    .init(color: .black, location: 1)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
+        .ignoresSafeArea(edges: .bottom)
+    }
+}
+
+private extension SignInProvider {
+    var loginTitle: String {
+        switch self {
+        case .apple: "Continue with Apple"
+        case .google: "Continue with Google"
+        case .email: "Continue with email"
+        }
+    }
+
+    var fill: Color {
+        switch self {
+        case .apple: .white
+        case .google, .email: Color(red: 0.105, green: 0.085, blue: 0.09)
+        }
+    }
+
+    var foreground: Color {
+        switch self {
+        case .apple: .black
+        case .google, .email: .white
+        }
+    }
+}
+
+private struct LoginOptionButton: View {
+    let provider: SignInProvider
+    let isLoading: Bool
+    let isComplete: Bool
+    let isDisabled: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 9) {
+                statusLogo
+                    .frame(width: 20, height: 20)
+
+                Text(currentTitle)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.84)
+            }
+            .font(.system(size: 15, weight: .bold))
+            .foregroundStyle(provider.foreground)
+            .frame(maxWidth: .infinity)
+            .frame(height: 48)
+            .background(provider.fill, in: Capsule())
+            .overlay {
+                Capsule()
+                    .stroke(.white.opacity(provider == .apple ? 0 : 0.05), lineWidth: 1)
+            }
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(isDisabled || isLoading || isComplete)
+        .opacity(isDisabled && !isLoading ? 0.58 : 1)
+        .animation(.easeInOut(duration: 0.16), value: isLoading)
+        .animation(.easeInOut(duration: 0.16), value: isDisabled)
+        .accessibilityLabel(provider.loginTitle)
+    }
+
+    private var currentTitle: String {
+        if isLoading { return "Connecting..." }
+        if isComplete { return "Signed in" }
+        return provider.loginTitle
+    }
+
+    @ViewBuilder
+    private var statusLogo: some View {
+        if isLoading {
+            ProgressView()
+                .controlSize(.small)
+                .tint(provider.foreground)
+        } else if isComplete {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 18, weight: .bold))
+        } else {
+            logo
+        }
+    }
+
+    @ViewBuilder
+    private var logo: some View {
+        switch provider {
+        case .apple:
+            Image(systemName: "apple.logo")
+                .font(.system(size: 18, weight: .semibold))
+        case .google:
+            Text("G")
+                .font(.system(size: 16, weight: .black))
+                .foregroundStyle(Color(red: 0.26, green: 0.52, blue: 0.96))
+        case .email:
+            Image(systemName: "envelope.fill")
+                .font(.system(size: 15, weight: .semibold))
+        }
+    }
+}
+
+private struct EmailSignInSheet: View {
+    @Binding var emailAddress: String
+    let isLoading: Bool
+    let onContinue: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    private var canContinue: Bool {
+        let trimmed = emailAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.contains("@") && trimmed.contains(".")
+    }
+
+    var body: some View {
+        VStack(spacing: 18) {
+            Capsule()
+                .fill(Color.black.opacity(0.16))
+                .frame(width: 38, height: 4)
+                .padding(.top, 8)
+
+            VStack(spacing: 6) {
+                Text("Continue with email")
+                    .font(.system(size: 22, weight: .semibold, design: .serif))
+                    .foregroundStyle(.black.opacity(0.88))
+
+                Text("Use any email to enter the SeenWords demo.")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.black.opacity(0.48))
+            }
+            .multilineTextAlignment(.center)
+
+            TextField("you@example.com", text: $emailAddress)
+                .keyboardType(.emailAddress)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .font(.system(size: 15, weight: .semibold))
+                .padding(.horizontal, 16)
+                .frame(height: 50)
+                .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(canContinue ? Color.black : Color.black.opacity(0.08), lineWidth: canContinue ? 1.4 : 1)
+                }
+
+            Button {
+                onContinue(emailAddress)
+            } label: {
+                HStack(spacing: 8) {
+                    if isLoading {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(Color(red: 0.96, green: 0.86, blue: 0.52))
+                    }
+                    Text(isLoading ? "Signing in..." : "Continue")
+                }
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(Color(red: 0.96, green: 0.86, blue: 0.52))
+                .frame(maxWidth: .infinity)
+                .frame(height: 52)
+                .background(Color(red: 0.12, green: 0.11, blue: 0.1), in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(!canContinue || isLoading)
+            .opacity(canContinue ? 1 : 0.45)
+
+            Button("Cancel") {
+                dismiss()
+            }
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(.black.opacity(0.56))
+            .disabled(isLoading)
+        }
+        .padding(.horizontal, 28)
+        .padding(.bottom, 18)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(Color.onboardingCanvas.ignoresSafeArea())
+    }
 }
 
 private struct LanguageChoiceRow: View {
@@ -438,89 +1183,6 @@ private struct OnboardingBrandMark: View {
                 .offset(x: 18, y: -13)
         }
         .frame(width: 56, height: 56)
-    }
-}
-
-private struct PreferenceToggleRow: View {
-    let symbol: String
-    let title: String
-    let subtitle: String
-    @Binding var isOn: Bool
-
-    var body: some View {
-        Toggle(isOn: $isOn) {
-            HStack(spacing: 12) {
-                Image(systemName: symbol)
-                    .foregroundStyle(Color.brandPurple)
-                    .frame(width: 34, height: 34)
-                    .background(Color.brandPurple.opacity(0.1), in: Circle())
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(.body.weight(.semibold))
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-        }
-        .toggleStyle(.switch)
-        .tint(.brandPurple)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-    }
-}
-
-private struct ProbeWordRow: View {
-    @EnvironmentObject private var store: WordStore
-    let word: LevelProbeWord
-    let isSelected: Bool
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: isSelected ? "eye.slash.fill" : "textformat")
-                .foregroundStyle(isSelected ? Color.brandPurple : .secondary)
-                .frame(width: 34, height: 34)
-                .background(
-                    isSelected ? Color.brandPurple.opacity(0.12) : Color.secondary.opacity(0.1),
-                    in: Circle()
-                )
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(word.text)
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                Text("\(word.category.title(store.appLanguage)) · \(difficultyText)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
-
-            Text(isSelected ? store.appLanguage.text(en: "Hide", zh: "先隐藏") : store.appLanguage.text(en: "Keep", zh: "先保留"))
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(isSelected ? Color.brandPurple : .secondary)
-                .padding(.horizontal, 9)
-                .padding(.vertical, 5)
-                .background(
-                    isSelected ? Color.brandPurple.opacity(0.1) : Color.secondary.opacity(0.1),
-                    in: Capsule()
-                )
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .contentShape(Rectangle())
-    }
-
-    private var difficultyText: String {
-        if word.difficulty <= 2 {
-            return store.appLanguage.text(en: "basic", zh: "很基础")
-        }
-        if word.difficulty <= 5 {
-            return store.appLanguage.text(en: "common", zh: "常见")
-        }
-        return store.appLanguage.text(en: "specific", zh: "偏具体")
     }
 }
 
@@ -588,4 +1250,26 @@ private struct SummaryPill: View {
 
 private extension Color {
     static let onboardingCanvas = Color(red: 0.96, green: 0.94, blue: 0.94)
+    static let sceneOrange = Color(red: 0.976, green: 0.847, blue: 0.651)
+    static let sceneTransitBlue = Color(red: 0.788, green: 0.969, blue: 0.996)
 }
+
+#if DEBUG
+private struct OnboardingLevelPreviewHost: View {
+    @StateObject private var store = WordStore()
+
+    var body: some View {
+        OnboardingView(previewStep: .level)
+            .environmentObject(store)
+    }
+}
+
+#Preview("Ordering Vocabulary Page") {
+    OnboardingLevelPreviewHost()
+}
+
+#Preview("Transit Vocabulary Page") {
+    OnboardingView(previewStep: .transitLevel)
+        .environmentObject(WordStore())
+}
+#endif

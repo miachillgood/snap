@@ -18,11 +18,26 @@ struct RootView: View {
 
     var body: some View {
         Group {
-            if store.hasCompletedOnboarding {
+#if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("-previewOnboardingLevel")
+                || ProcessInfo.processInfo.arguments.contains("-previewOnboardingTransit") {
+                OnboardingView(startsAtLogin: false)
+            } else if !store.isSignedIn {
+                OnboardingView(startsAtLogin: true)
+            } else if store.hasCompletedOnboarding {
                 mainTabs
             } else {
-                OnboardingView()
+                OnboardingView(startsAtLogin: false)
             }
+#else
+            if !store.isSignedIn {
+                OnboardingView(startsAtLogin: true)
+            } else if store.hasCompletedOnboarding {
+                mainTabs
+            } else {
+                OnboardingView(startsAtLogin: false)
+            }
+#endif
         }
     }
 
@@ -97,6 +112,25 @@ private struct AppSettingsView: View {
                     Picker(store.appLanguage.text(en: "Language", zh: "语言"), selection: $store.appLanguage) {
                         ForEach(AppLanguage.allCases) { language in
                             Text(language.nativeTitle).tag(language)
+                        }
+                    }
+                }
+
+                if let user = store.signedInUser {
+                    Section(store.appLanguage.text(en: "Account", zh: "账号")) {
+                        LabeledContent(store.appLanguage.text(en: "Signed in with", zh: "登录方式")) {
+                            Text(user.provider.displayTitle)
+                        }
+
+                        LabeledContent(store.appLanguage.text(en: "Email", zh: "邮箱")) {
+                            Text(user.email)
+                        }
+
+                        Button(role: .destructive) {
+                            store.signOut()
+                            dismiss()
+                        } label: {
+                            Label(store.appLanguage.text(en: "Sign out", zh: "退出登录"), systemImage: "rectangle.portrait.and.arrow.right")
                         }
                     }
                 }

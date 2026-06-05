@@ -160,8 +160,16 @@ struct UserProfile: Identifiable, Hashable {
 struct LevelProbeWord: Identifiable, Hashable {
     let id = UUID()
     let text: String
+    let translation: String
     let category: WordCategory
     let difficulty: Int
+
+    init(text: String, translation: String = "", category: WordCategory, difficulty: Int) {
+        self.text = text
+        self.translation = translation
+        self.category = category
+        self.difficulty = difficulty
+    }
 }
 
 struct VocabularyWord: Identifiable, Hashable {
@@ -201,6 +209,45 @@ struct SharedPack: Identifiable {
     var isPublic: Bool
 }
 
+enum SignInProvider: String, CaseIterable, Identifiable {
+    case apple
+    case google
+    case email
+
+    var id: String { rawValue }
+
+    var displayTitle: String {
+        switch self {
+        case .apple: "Apple"
+        case .google: "Google"
+        case .email: "Email"
+        }
+    }
+
+    var defaultDisplayName: String {
+        switch self {
+        case .apple: "Apple user"
+        case .google: "Google user"
+        case .email: "SeenWords user"
+        }
+    }
+
+    var defaultEmail: String {
+        switch self {
+        case .apple: "apple.user@seenwords.local"
+        case .google: "google.user@seenwords.local"
+        case .email: "you@seenwords.local"
+        }
+    }
+}
+
+struct SignedInUser: Identifiable, Equatable {
+    let id: String
+    var displayName: String
+    var email: String
+    var provider: SignInProvider
+}
+
 @MainActor
 final class WordStore: ObservableObject {
     @Published var scannedWords = SampleData.scannedWords
@@ -211,6 +258,11 @@ final class WordStore: ObservableObject {
     @Published var userProfile = SampleData.userProfile
     @Published var sessionRatings: [ReviewRating] = []
     @Published var appLanguage: AppLanguage = .english
+    @Published var signedInUser: SignedInUser? = WordStore.loadSignedInUser() {
+        didSet {
+            WordStore.saveSignedInUser(signedInUser)
+        }
+    }
     @Published var hasCompletedOnboarding = UserDefaults.standard.object(forKey: "hasCompletedOnboarding") as? Bool ?? false {
         didSet {
             UserDefaults.standard.set(hasCompletedOnboarding, forKey: "hasCompletedOnboarding")
@@ -225,17 +277,14 @@ final class WordStore: ObservableObject {
         userProfile
     }
 
-    func recommendationSubtitle(_ language: AppLanguage) -> String {
-        if currentProfile.goal == .realLife {
-            return language.text(
-                en: "Filtered by this photo · \(currentProfile.level.shortTitle(language))",
-                zh: "按这张照片 · \(currentProfile.level.shortTitle(language))水平筛词"
-            )
-        }
+    var isSignedIn: Bool {
+        signedInUser != nil
+    }
 
-        return language.text(
-            en: "Tailored for \(currentProfile.goal.title(language).lowercased()) · \(currentProfile.level.shortTitle(language))",
-            zh: "根据\(currentProfile.goal.title(language)) · \(currentProfile.level.shortTitle(language))水平推荐"
+    func recommendationSubtitle(_ language: AppLanguage) -> String {
+        language.text(
+            en: "Filtered by this photo · \(currentProfile.level.shortTitle(language))",
+            zh: "按这张照片 · \(currentProfile.level.shortTitle(language))水平筛词"
         )
     }
 
@@ -301,6 +350,31 @@ final class WordStore: ObservableObject {
         userProfile.calibrationScore = calibrationScore
     }
 
+    func signIn(provider: SignInProvider, email: String? = nil) {
+        let cleanEmail = email?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let finalEmail: String
+        if let cleanEmail, !cleanEmail.isEmpty {
+            finalEmail = cleanEmail
+        } else {
+            finalEmail = provider.defaultEmail
+        }
+        let displayName = displayName(for: finalEmail, provider: provider)
+
+        signedInUser = SignedInUser(
+            id: "\(provider.rawValue)-\(finalEmail.lowercased())",
+            displayName: displayName,
+            email: finalEmail,
+            provider: provider
+        )
+        userProfile.name = displayName
+    }
+
+    func signOut() {
+        signedInUser = nil
+        hasCompletedOnboarding = false
+        resetReviewSession()
+    }
+
     func completeOnboarding(
         name: String = "",
         level: EnglishLevel,
@@ -311,7 +385,7 @@ final class WordStore: ObservableObject {
         confirmsBeforeReview: Bool = true
     ) {
         let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        userProfile.name = cleanName.isEmpty ? "You" : cleanName
+        userProfile.name = cleanName.isEmpty ? (signedInUser?.displayName ?? "You") : cleanName
         userProfile.role = roleText(for: goal)
         userProfile.level = level
         userProfile.goal = goal
@@ -450,6 +524,46 @@ final class WordStore: ObservableObject {
         case .medicalVisits: "Health English learner"
         case .transport: "Transport English learner"
         }
+    }
+
+    private func displayName(for email: String, provider: SignInProvider) -> String {
+        guard provider == .email else { return provider.defaultDisplayName }
+        let prefix = email.split(separator: "@").first.map(String.init) ?? ""
+        return prefix.isEmpty ? provider.defaultDisplayName : prefix.capitalized
+    }
+
+    private static func loadSignedInUser() -> SignedInUser? {
+        let defaults = UserDefaults.standard
+        guard
+            let providerValue = defaults.string(forKey: "signedInProvider"),
+            let provider = SignInProvider(rawValue: providerValue),
+            let email = defaults.string(forKey: "signedInEmail"),
+            let name = defaults.string(forKey: "signedInDisplayName")
+        else {
+            return nil
+        }
+
+        return SignedInUser(
+            id: "\(provider.rawValue)-\(email.lowercased())",
+            displayName: name,
+            email: email,
+            provider: provider
+        )
+    }
+
+    private static func saveSignedInUser(_ user: SignedInUser?) {
+        let defaults = UserDefaults.standard
+
+        guard let user else {
+            defaults.removeObject(forKey: "signedInProvider")
+            defaults.removeObject(forKey: "signedInEmail")
+            defaults.removeObject(forKey: "signedInDisplayName")
+            return
+        }
+
+        defaults.set(user.provider.rawValue, forKey: "signedInProvider")
+        defaults.set(user.email, forKey: "signedInEmail")
+        defaults.set(user.displayName, forKey: "signedInDisplayName")
     }
 }
 
