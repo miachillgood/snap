@@ -165,6 +165,10 @@ extension VocabularyWord {
         case "Cafe counter sign": language.text(en: "Cafe counter sign", zh: "咖啡店柜台标识")
         case "Cafe menu · Coffee": language.text(en: "Cafe menu · Coffee", zh: "咖啡店菜单 · 咖啡")
         case "Cafe counter": language.text(en: "Cafe counter", zh: "咖啡店柜台")
+        case "Cafe shift note": language.text(en: "Cafe shift note", zh: "咖啡店班次记录")
+        case "Parking sign": language.text(en: "Parking sign", zh: "停车标识")
+        case "Clinic form": language.text(en: "Clinic form", zh: "诊所表格")
+        case "Supermarket label": language.text(en: "Supermarket label", zh: "超市标签")
         default: sourceScene
         }
     }
@@ -223,17 +227,34 @@ extension ScenePhoto {
         case "Parking sign": language.text(en: "Parking sign", zh: "停车标识")
         case "Clinic form": language.text(en: "Clinic form", zh: "诊所表格")
         case "Supermarket label": language.text(en: "Supermarket label", zh: "超市标签")
+        case "Cafe shift note": language.text(en: "Cafe shift note", zh: "咖啡店班次记录")
+        case "Captured scene": language.text(en: "Captured scene", zh: "拍摄场景")
+        case "Gallery scene": language.text(en: "Gallery scene", zh: "图库场景")
         default: title
         }
     }
 
     func subtitle(_ language: AppLanguage) -> String {
-        switch subtitle {
-        case "Today": language.text(en: "Today", zh: "今天")
-        case "2 days ago": language.text(en: "2 days ago", zh: "2 天前")
-        case "3 days ago": language.text(en: "3 days ago", zh: "3 天前")
-        case "5 days ago": language.text(en: "5 days ago", zh: "5 天前")
-        default: subtitle
+        let formatter = DateFormatter()
+        formatter.locale = locale(for: language)
+        formatter.dateFormat = language == .simplifiedChinese ? "HH:mm" : "h:mm a"
+        return formatter.string(from: captureDate)
+    }
+
+    func dayTitle(_ language: AppLanguage) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = locale(for: language)
+        formatter.dateFormat = language == .simplifiedChinese ? "M月d日" : "MMM d"
+        return formatter.string(from: captureDate)
+    }
+
+    private func locale(for language: AppLanguage) -> Locale {
+        switch language {
+        case .simplifiedChinese: Locale(identifier: "zh_Hans")
+        case .japanese: Locale(identifier: "ja_JP")
+        case .korean: Locale(identifier: "ko_KR")
+        case .spanish: Locale(identifier: "es_ES")
+        case .english: Locale(identifier: "en_US")
         }
     }
 }

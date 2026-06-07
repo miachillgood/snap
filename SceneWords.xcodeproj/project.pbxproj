@@ -296,6 +296,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = SeenWords;
 				INFOPLIST_KEY_NSCameraUsageDescription = "SeenWords uses the camera to capture real-life text for vocabulary practice.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "SeenWords lets you choose real-life photos for vocabulary practice.";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
@@ -323,6 +324,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = SeenWords;
 				INFOPLIST_KEY_NSCameraUsageDescription = "SeenWords uses the camera to capture real-life text for vocabulary practice.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "SeenWords lets you choose real-life photos for vocabulary practice.";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;

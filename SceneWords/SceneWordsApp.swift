@@ -58,13 +58,6 @@ struct RootView: View {
             }
 
             rootScreen {
-                LibraryView()
-            }
-            .tabItem {
-                Label(store.appLanguage.text(en: "Library", zh: "图库"), systemImage: "photo.stack.fill")
-            }
-
-            rootScreen {
                 PacksView()
             }
             .tabItem {

@@ -48,15 +48,24 @@ struct LibraryView: View {
 
     private var photosSection: some View {
         VStack(alignment: .leading, spacing: 14) {
-            SectionHeader(title: store.appLanguage.text(en: "This week", zh: "本周"))
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
-                ForEach(SampleData.photos) { photo in
-                    NavigationLink {
-                        PhotoDetailView(photo: photo)
-                    } label: {
-                        PhotoTile(photo: photo)
-                    }
-                    .buttonStyle(.plain)
+            SectionHeader(title: store.appLanguage.text(en: "Photo history", zh: "照片记录"))
+
+            if store.photoDaySections.isEmpty {
+                VStack(spacing: 10) {
+                    Image(systemName: "photo.stack")
+                        .font(.system(size: 32, weight: .semibold))
+                        .foregroundStyle(Color.brandPurple)
+                    Text(store.appLanguage.text(en: "Photos you capture will appear here by date.", zh: "你拍下或选择的照片会按日期显示在这里。"))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(24)
+                .background(.background, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            } else {
+                ForEach(store.photoDaySections) { section in
+                    PhotoHistoryDayCard(section: section)
                 }
             }
         }
@@ -163,7 +172,7 @@ private struct CategoryWordsRow: View {
     }
 }
 
-private struct PhotoDetailView: View {
+struct PhotoDetailView: View {
     @EnvironmentObject private var store: WordStore
     let photo: ScenePhoto
     @State private var isReviewing = false
@@ -183,7 +192,7 @@ private struct PhotoDetailView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                MenuPhotoMock(compact: false, revealedChipCount: min(words.count, 5))
+                ScenePhotoImage(photo: photo, height: 260, cornerRadius: 24)
                 CategoryBadge(category: photo.category)
 
                 Button {
@@ -217,7 +226,7 @@ private struct PhotoDetailView: View {
         .navigationTitle(photo.title(store.appLanguage))
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(isPresented: $isReviewing) {
-            ReviewView()
+            LightReviewSessionView(words: store.words(for: photo), title: photo.title(store.appLanguage))
         }
     }
 }
@@ -288,7 +297,7 @@ private struct CategoryDetailView: View {
         .navigationTitle(category.title(store.appLanguage))
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(isPresented: $isReviewing) {
-            ReviewView()
+            LightReviewSessionView(words: store.words(in: category, reviewableOnly: true), title: category.title(store.appLanguage))
         }
     }
 }
@@ -335,19 +344,23 @@ private struct LibraryPackRow: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            Image(systemName: pack.isPublic ? "globe" : "lock.fill")
-                .font(.title3)
-                .foregroundStyle(.white)
-                .frame(width: 48, height: 48)
-                .background(pack.isPublic ? Color.green : Color.brandPurple, in: Circle())
+            PackAvatar(initial: pack.ownerAvatarInitial, color: pack.category.color)
             VStack(alignment: .leading, spacing: 4) {
                 Text(pack.title)
                     .font(.headline)
-                Text(store.appLanguage.text(en: "\(pack.words.count) words · by \(pack.owner)", zh: "\(pack.words.count) 个词 · \(pack.owner) 创建"))
+                    .lineLimit(1)
+                Text(store.appLanguage.text(en: "\(pack.wordCount) words · by \(pack.owner)", zh: "\(pack.wordCount) 个词 · \(pack.owner) 创建"))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                if !pack.description.isEmpty {
+                    Text(pack.description)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
             }
             Spacer()
+            PackVisibilityBadge(visibility: pack.visibility)
             Image(systemName: "chevron.right")
                 .font(.caption.weight(.bold))
                 .foregroundStyle(.secondary)
@@ -365,14 +378,45 @@ private struct LibraryPackDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                MenuPhotoMock(compact: false)
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(pack.title)
-                        .font(.largeTitle.bold())
-                    Text(store.appLanguage.text(en: "by \(pack.owner) · \(pack.location)", zh: "\(pack.owner) 创建 · \(pack.location)"))
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack(alignment: .top, spacing: 14) {
+                        PackAvatar(initial: pack.ownerAvatarInitial, color: pack.category.color)
+                            .scaleEffect(1.12)
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(pack.title)
+                                .font(.largeTitle.bold())
+                            Text(store.appLanguage.text(en: "by \(pack.owner) · \(pack.location)", zh: "\(pack.owner) 创建 · \(pack.location)"))
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    if pack.description.isEmpty {
+                        Label(store.appLanguage.text(en: "This draft needs a description before it can be public.", zh: "这个草稿需要描述后才能公开。"), systemImage: "exclamationmark.circle.fill")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.orange)
+                    } else {
+                        Text(pack.description)
+                            .font(.body)
+                    }
+
+                    HStack(spacing: 8) {
+                        CategoryBadge(category: pack.category)
+                        PackVisibilityBadge(visibility: pack.visibility)
+                    }
+
+                    if !pack.tags.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(pack.tags, id: \.self) { tag in
+                                    PackTagChip(text: tag, color: pack.category.color)
+                                }
+                            }
+                        }
+                    }
                 }
+                .padding(16)
+                .background(.background, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
 
                 Button {
                     store.startLearning(pack)
@@ -385,6 +429,23 @@ private struct LibraryPackDetailView: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
                 .tint(.green)
+
+                if pack.visibility != .privatePack, let shareURL = URL(string: "https://\(pack.shareLinkText)") {
+                    ShareLink(item: shareURL) {
+                        Label(pack.shareLinkText, systemImage: "link")
+                            .font(.subheadline.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                }
+
+                VStack(alignment: .leading, spacing: 10) {
+                    SectionHeader(title: store.appLanguage.text(en: "Source scenes", zh: "来源场景"))
+                    FlowWords(words: pack.sourceScenes)
+                }
+                .padding(16)
+                .background(.background, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 10) {
                     SectionHeader(title: store.appLanguage.text(en: "Words", zh: "单词"))
@@ -399,7 +460,7 @@ private struct LibraryPackDetailView: View {
         .navigationTitle(pack.title)
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(isPresented: $isReviewing) {
-            ReviewView()
+            LightReviewSessionView(words: store.lightReviewWords.isEmpty ? store.dueWords : store.lightReviewWords, title: pack.title)
         }
     }
 }

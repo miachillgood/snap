@@ -1,4 +1,6 @@
+import PhotosUI
 import SwiftUI
+import UIKit
 
 struct CameraView: View {
     @EnvironmentObject private var store: WordStore
@@ -7,14 +9,16 @@ struct CameraView: View {
     @State private var scanStage: ScanStage = .ready
     @State private var revealedChipCount = 0
     @State private var scanRunID = 0
+    @State private var selectedPhotoItem: PhotosPickerItem?
+    @State private var isShowingCamera = false
+    @State private var isProcessingPhoto = false
+    @State private var showsCameraUnavailable = false
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                header
-                captureHero
-                quickActions
-                todayWords
+            VStack(alignment: .leading, spacing: 18) {
+                captureLensCard
+                photoHistory
             }
             .padding(20)
             .padding(.bottom, 84)
@@ -26,10 +30,18 @@ struct CameraView: View {
             CategoryEditor()
                 .presentationDetents([.medium])
         }
-        .onAppear {
-            if scanStage == .ready {
-                startScanAnimation()
+        .sheet(isPresented: $isShowingCamera) {
+            CameraCapturePicker { image in
+                handleCapturedImage(image, source: .camera)
             }
+        }
+        .onChange(of: selectedPhotoItem) { _, newItem in
+            loadSelectedPhoto(newItem)
+        }
+        .alert(store.appLanguage.text(en: "Camera unavailable", zh: "无法打开摄像头"), isPresented: $showsCameraUnavailable) {
+            Button(store.appLanguage.text(en: "OK", zh: "知道了"), role: .cancel) {}
+        } message: {
+            Text(store.appLanguage.text(en: "This device cannot open the camera here. You can still choose a photo from the library.", zh: "当前设备无法在这里打开摄像头。你仍然可以从图库选择照片。"))
         }
     }
 
@@ -105,6 +117,109 @@ struct CameraView: View {
         .background(.background, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 
+    private var captureLensCard: some View {
+        let takePhotoTitle = store.appLanguage.text(en: "Take a photo", zh: "拍照")
+        let helperText = store.appLanguage.text(en: "Capture what you see", zh: "拍下你看见的东西")
+        let libraryTitle = store.appLanguage.text(en: "Library", zh: "图库")
+        let savedCountText = store.appLanguage.text(en: "\(store.photos.count) saved", zh: "已保存 \(store.photos.count) 张")
+
+        return VStack(spacing: 0) {
+            Spacer(minLength: 10)
+
+            Button {
+                openCamera()
+            } label: {
+                ZStack {
+                    Circle()
+                        .fill(Color.brandPurple.opacity(0.1))
+                        .frame(width: 178, height: 178)
+
+                    Circle()
+                        .stroke(Color.brandPurple.opacity(0.18), lineWidth: 18)
+                        .frame(width: 142, height: 142)
+
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [Color.brandPurple, Color(red: 0.55, green: 0.42, blue: 0.98)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 112, height: 112)
+                        .shadow(color: Color.brandPurple.opacity(0.28), radius: 20, y: 12)
+
+                    Image(systemName: "camera.viewfinder")
+                        .font(.system(size: 34, weight: .semibold))
+                        .foregroundStyle(.white)
+                }
+                .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(takePhotoTitle)
+
+            if isProcessingPhoto || scanStage != .ready {
+                captureStatus
+                    .padding(.top, 18)
+                    .padding(.horizontal, 20)
+            } else {
+                Text(helperText)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 18)
+            }
+
+            Spacer(minLength: 18)
+
+            HStack {
+                PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+                    Label(libraryTitle, systemImage: "photo.on.rectangle")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(Color.brandPurple)
+                        .padding(.horizontal, 13)
+                        .padding(.vertical, 10)
+                        .background(Color.brandPurple.opacity(0.1), in: Capsule())
+                }
+                .disabled(isProcessingPhoto)
+
+                Spacer()
+
+                Text(savedCountText)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 318)
+        .padding(18)
+        .background(.background, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+    }
+
+    private var photoHistory: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            SectionHeader(title: store.appLanguage.text(en: "Photo history", zh: "照片记录"))
+
+            if store.photoDaySections.isEmpty {
+                VStack(spacing: 10) {
+                    Image(systemName: "photo.stack")
+                        .font(.system(size: 32, weight: .semibold))
+                        .foregroundStyle(Color.brandPurple)
+                    Text(store.appLanguage.text(en: "Photos you capture will appear here by date.", zh: "你拍下或选择的照片会按日期显示在这里。"))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(24)
+                .background(.background, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            } else {
+                ForEach(store.photoDaySections) { section in
+                    PhotoHistoryDayCard(section: section)
+                }
+            }
+        }
+    }
+
     private var quickActions: some View {
         HStack(spacing: 12) {
             NavigationLink {
@@ -120,11 +235,11 @@ struct CameraView: View {
             .buttonStyle(.plain)
 
             NavigationLink {
-                LibraryView()
+                ReviewView()
             } label: {
                 ActionTile(
                     symbol: "photo.stack.fill",
-                    title: store.appLanguage.text(en: "Photo library", zh: "照片图库"),
+                    title: store.appLanguage.text(en: "Review library", zh: "复习词库"),
                     value: store.appLanguage.text(en: "4 scenes", zh: "4 个场景"),
                     color: .green
                 )
@@ -254,7 +369,7 @@ struct CameraView: View {
 
     private var reviewButton: some View {
         NavigationLink {
-            ReviewView()
+            LightReviewSessionView(words: store.dueWords, title: reviewButtonTitle)
         } label: {
             HStack {
                 Image(systemName: "sparkles")
@@ -341,6 +456,50 @@ private enum ScanStage {
 }
 
 private extension CameraView {
+    func openCamera() {
+        guard UIImagePickerController.isSourceTypeAvailable(.camera) else {
+            showsCameraUnavailable = true
+            return
+        }
+
+        isShowingCamera = true
+    }
+
+    func loadSelectedPhoto(_ item: PhotosPickerItem?) {
+        guard let item else { return }
+
+        isProcessingPhoto = true
+        Task {
+            do {
+                if
+                    let data = try await item.loadTransferable(type: Data.self),
+                    let image = UIImage(data: data)
+                {
+                    await MainActor.run {
+                        handleCapturedImage(image, source: .library)
+                    }
+                } else {
+                    await MainActor.run {
+                        isProcessingPhoto = false
+                        selectedPhotoItem = nil
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    isProcessingPhoto = false
+                    selectedPhotoItem = nil
+                }
+            }
+        }
+    }
+
+    func handleCapturedImage(_ image: UIImage, source: PhotoCaptureSource) {
+        isProcessingPhoto = false
+        selectedPhotoItem = nil
+        store.addPhoto(image, source: source)
+        startScanAnimation()
+    }
+
     func startScanAnimation() {
         scanRunID += 1
         let currentRunID = scanRunID
@@ -368,6 +527,49 @@ private extension CameraView {
             withAnimation(.snappy(duration: 0.42)) {
                 scanStage = .ready
             }
+        }
+    }
+}
+
+private struct CameraCapturePicker: UIViewControllerRepresentable {
+    let onImage: (UIImage) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onImage: onImage, dismiss: dismiss)
+    }
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.sourceType = .camera
+        picker.allowsEditing = false
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+
+    final class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        let onImage: (UIImage) -> Void
+        let dismiss: DismissAction
+
+        init(onImage: @escaping (UIImage) -> Void, dismiss: DismissAction) {
+            self.onImage = onImage
+            self.dismiss = dismiss
+        }
+
+        func imagePickerController(
+            _ picker: UIImagePickerController,
+            didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]
+        ) {
+            if let image = info[.originalImage] as? UIImage {
+                onImage(image)
+            }
+            dismiss()
+        }
+
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            dismiss()
         }
     }
 }

@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct CategoryBadge: View {
     @EnvironmentObject private var store: WordStore
@@ -26,6 +27,49 @@ struct WordChip: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(isSelected ? color : color.opacity(0.12), in: Capsule())
+    }
+}
+
+struct PackAvatar: View {
+    let initial: String
+    var color: Color = .brandPurple
+
+    var body: some View {
+        Text(initial.isEmpty ? "?" : initial)
+            .font(.headline.bold())
+            .foregroundStyle(.white)
+            .frame(width: 48, height: 48)
+            .background(color, in: Circle())
+            .accessibilityHidden(true)
+    }
+}
+
+struct PackTagChip: View {
+    let text: String
+    var color: Color = .brandPurple
+
+    var body: some View {
+        Text(text)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(color)
+            .lineLimit(1)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(color.opacity(0.1), in: Capsule())
+    }
+}
+
+struct PackVisibilityBadge: View {
+    @EnvironmentObject private var store: WordStore
+    let visibility: PackVisibility
+
+    var body: some View {
+        Label(visibility.title(store.appLanguage), systemImage: visibility.symbol)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(visibility.color)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(visibility.color.opacity(0.1), in: Capsule())
     }
 }
 
@@ -1041,6 +1085,78 @@ private struct ScanOverlay: View {
     }
 }
 
+struct PhotoHistoryDayCard: View {
+    @EnvironmentObject private var store: WordStore
+    let section: PhotoDaySection
+
+    private let columns = [
+        GridItem(.flexible(), spacing: 12),
+        GridItem(.flexible(), spacing: 12)
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text(dayTitle)
+                    .font(.headline.weight(.bold))
+                Spacer()
+                Text(store.appLanguage.text(en: "\(section.photos.count) photos", zh: "\(section.photos.count) 张照片"))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+
+            LazyVGrid(columns: columns, spacing: 14) {
+                ForEach(section.photos) { photo in
+                    NavigationLink {
+                        LightReviewSessionView(words: store.words(for: photo), title: photo.title(store.appLanguage))
+                    } label: {
+                        PhotoTile(photo: photo)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(16)
+        .background(.background, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+    }
+
+    private var dayTitle: String {
+        guard let firstPhoto = section.photos.first else {
+            return ""
+        }
+
+        return firstPhoto.dayTitle(store.appLanguage)
+    }
+}
+
+struct ScenePhotoImage: View {
+    @EnvironmentObject private var store: WordStore
+    let photo: ScenePhoto
+    var height: CGFloat
+    var cornerRadius: CGFloat = 18
+
+    var body: some View {
+        ZStack {
+            if let image = store.photoImage(for: photo) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(photo.category.color.opacity(0.14))
+                    .overlay {
+                        Image(systemName: photo.symbol)
+                            .font(.system(size: min(height * 0.36, 48), weight: .semibold))
+                            .foregroundStyle(photo.category.color)
+                    }
+            }
+        }
+        .frame(height: height)
+        .frame(maxWidth: .infinity)
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+    }
+}
+
 struct PhotoTile: View {
     @EnvironmentObject private var store: WordStore
     let photo: ScenePhoto
@@ -1048,14 +1164,8 @@ struct PhotoTile: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             ZStack(alignment: .bottomLeading) {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(photo.category.color.opacity(0.14))
-                    .frame(height: 116)
-                    .overlay {
-                        Image(systemName: photo.symbol)
-                            .font(.system(size: 42, weight: .semibold))
-                            .foregroundStyle(photo.category.color)
-                    }
+                ScenePhotoImage(photo: photo, height: 116)
+
                 Label("\(photo.wordCount)", systemImage: "photo")
                     .font(.caption.weight(.bold))
                     .foregroundStyle(.white)
