@@ -96,7 +96,7 @@ struct PacksView: View {
                     .font(.headline.weight(.bold))
                     .foregroundStyle(.white)
                     .frame(width: 48, height: 48)
-                    .background(.green, in: Circle())
+                    .background(Color.mainAction, in: Circle())
                 VStack(alignment: .leading, spacing: 4) {
                     Text(store.appLanguage.text(en: "Create a pack from selected words", zh: "用已选单词创建词包"))
                         .font(.headline)
@@ -113,14 +113,14 @@ struct PacksView: View {
         }
         .buttonStyle(.plain)
         .padding(16)
-        .background(.green.opacity(0.12), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .background(Color.mainAction.opacity(0.12), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 
     private var emptyState: some View {
         VStack(spacing: 10) {
             Image(systemName: "square.stack.3d.up.slash")
                 .font(.system(size: 30, weight: .semibold))
-                .foregroundStyle(Color.brandPurple)
+                .foregroundStyle(Color.mainAccent)
             Text(store.appLanguage.text(en: "No packs found", zh: "没有找到词包"))
                 .font(.headline)
             Text(store.appLanguage.text(en: "Try another keyword or switch filters.", zh: "换一个关键词，或者切换筛选。"))
@@ -164,7 +164,7 @@ private struct PackCard: View {
                     if pack.description.isEmpty {
                         Label(store.appLanguage.text(en: "Draft needs a description before it can be public.", zh: "草稿需要描述后才能公开。"), systemImage: "exclamationmark.circle.fill")
                             .font(.caption.weight(.semibold))
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(Color.mainWarning)
                     } else {
                         Text(pack.description)
                             .font(.subheadline)
@@ -247,7 +247,7 @@ private struct PackCard: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
-                .tint(.green)
+                .tint(.mainAction)
 
                 if let shareURL = URL(string: "https://\(pack.shareLinkText)"), pack.visibility != .privatePack {
                     ShareLink(item: shareURL) {

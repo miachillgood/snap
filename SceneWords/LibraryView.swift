@@ -54,7 +54,7 @@ struct LibraryView: View {
                 VStack(spacing: 10) {
                     Image(systemName: "photo.stack")
                         .font(.system(size: 32, weight: .semibold))
-                        .foregroundStyle(Color.brandPurple)
+                        .foregroundStyle(Color.mainAccent)
                     Text(store.appLanguage.text(en: "Photos you capture will appear here by date.", zh: "你拍下或选择的照片会按日期显示在这里。"))
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
@@ -112,14 +112,14 @@ struct LibraryView: View {
             HStack(spacing: 14) {
                 Image(systemName: "chart.line.uptrend.xyaxis")
                     .font(.title2)
-                    .foregroundStyle(Color.brandPurple)
+                    .foregroundStyle(Color.mainAccent)
                     .frame(width: 52, height: 52)
-                    .background(Color.brandPurple.opacity(0.12), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .background(Color.mainAccent.opacity(0.12), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 VStack(alignment: .leading, spacing: 4) {
                     Text(store.appLanguage.text(en: "\(store.selectedWords.count) active words · \(store.dueWords.count) due now", zh: "\(store.selectedWords.count) 个学习中 · 当前可复习 \(store.dueWords.count) 个"))
                         .font(.headline)
                     ProgressView(value: store.sessionProgress == 0 ? 0.18 : store.sessionProgress)
-                        .tint(.brandPurple)
+                        .tint(.mainAccent)
                 }
                 Spacer()
                 Image(systemName: "chevron.right")
@@ -175,7 +175,7 @@ private struct CategoryWordsRow: View {
 struct PhotoDetailView: View {
     @EnvironmentObject private var store: WordStore
     let photo: ScenePhoto
-    @State private var isReviewing = false
+    @State private var isChoosingWords = false
 
     private var words: [VocabularyWord] {
         store.words(in: photo.category)
@@ -197,15 +197,15 @@ struct PhotoDetailView: View {
 
                 Button {
                     store.usePhoto(photo)
-                    isReviewing = true
+                    isChoosingWords = true
                 } label: {
-                    Label(store.appLanguage.text(en: "Review words from this photo", zh: "复习这张照片里的词"), systemImage: "brain.head.profile")
+                    Label(store.appLanguage.text(en: "Choose words from this photo", zh: "选择这张照片里的词"), systemImage: "text.word.spacing")
                         .font(.headline)
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
-                .tint(.brandPurple)
+                .tint(.mainAccent)
 
                 VStack(alignment: .leading, spacing: 0) {
                     SectionHeader(title: store.appLanguage.text(en: "Words in this scene", zh: "这个场景里的词"))
@@ -225,8 +225,8 @@ struct PhotoDetailView: View {
         .background(Color.softBackground)
         .navigationTitle(photo.title(store.appLanguage))
         .navigationBarTitleDisplayMode(.inline)
-        .navigationDestination(isPresented: $isReviewing) {
-            LightReviewSessionView(words: store.words(for: photo), title: photo.title(store.appLanguage))
+        .navigationDestination(isPresented: $isChoosingWords) {
+            CapturedWordsSelectionView(photo: photo)
         }
     }
 }
@@ -278,7 +278,7 @@ private struct CategoryDetailView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
-                    .tint(.brandPurple)
+                    .tint(.mainAccent)
                 }
 
                 VStack(alignment: .leading, spacing: 0) {
@@ -317,7 +317,7 @@ private struct WordSelectionRow: View {
             HStack(spacing: 12) {
                 Image(systemName: word.isSelected ? "checkmark.circle.fill" : "circle")
                     .font(.title3)
-                    .foregroundStyle(word.isSelected ? Color.brandPurple : .secondary)
+                    .foregroundStyle(word.isSelected ? Color.mainAccent : .secondary)
                     .frame(width: 34)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(word.text)
@@ -329,7 +329,7 @@ private struct WordSelectionRow: View {
                 Spacer()
                 Text(word.nextReviewText(store.appLanguage))
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color.brandPurple)
+                    .foregroundStyle(Color.mainAccent)
             }
             .padding(16)
             .contentShape(Rectangle())
@@ -394,7 +394,7 @@ private struct LibraryPackDetailView: View {
                     if pack.description.isEmpty {
                         Label(store.appLanguage.text(en: "This draft needs a description before it can be public.", zh: "这个草稿需要描述后才能公开。"), systemImage: "exclamationmark.circle.fill")
                             .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(Color.mainWarning)
                     } else {
                         Text(pack.description)
                             .font(.body)
@@ -428,7 +428,7 @@ private struct LibraryPackDetailView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
-                .tint(.green)
+                .tint(.mainAction)
 
                 if pack.visibility != .privatePack, let shareURL = URL(string: "https://\(pack.shareLinkText)") {
                     ShareLink(item: shareURL) {

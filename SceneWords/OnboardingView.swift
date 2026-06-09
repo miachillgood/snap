@@ -14,8 +14,29 @@ struct OnboardingView: View {
 
     init(startsAtLogin: Bool = true) {
 #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-previewOnboardingResult") {
+            _step = State(initialValue: .calibrationResult)
+            _knownWords = State(initialValue: OnboardingPreviewKnownWords.sample)
+            return
+        }
+
+        if ProcessInfo.processInfo.arguments.contains("-previewOnboardingMedical") {
+            _step = State(initialValue: .medicalLevel)
+            return
+        }
+
         if ProcessInfo.processInfo.arguments.contains("-previewOnboardingTransit") {
             _step = State(initialValue: .transitLevel)
+            return
+        }
+
+        if ProcessInfo.processInfo.arguments.contains("-previewOnboardingHousing") {
+            _step = State(initialValue: .housingLevel)
+            return
+        }
+
+        if ProcessInfo.processInfo.arguments.contains("-previewOnboardingShopping") {
+            _step = State(initialValue: .shoppingLevel)
             return
         }
 
@@ -45,10 +66,14 @@ struct OnboardingView: View {
                 welcomeStep.tag(OnboardingStep.welcome)
                 levelStep.tag(OnboardingStep.level)
                 transitLevelStep.tag(OnboardingStep.transitLevel)
+                shoppingLevelStep.tag(OnboardingStep.shoppingLevel)
+                housingLevelStep.tag(OnboardingStep.housingLevel)
+                medicalLevelStep.tag(OnboardingStep.medicalLevel)
+                resultStep.tag(OnboardingStep.calibrationResult)
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
 
-            if step != .login && !step.isSceneCalibration {
+            if step != .login && !step.isSceneCalibration && step != .calibrationResult {
                 bottomBar
             }
         }
@@ -294,6 +319,47 @@ struct OnboardingView: View {
         )
     }
 
+    private var shoppingLevelStep: some View {
+        SceneVocabularyCalibrationView(
+            language: store.appLanguage,
+            scene: .shopping,
+            knownWords: $knownWords,
+            actionTitle: primaryButtonTitle,
+            action: advance
+        )
+    }
+
+    private var housingLevelStep: some View {
+        SceneVocabularyCalibrationView(
+            language: store.appLanguage,
+            scene: .housing,
+            knownWords: $knownWords,
+            actionTitle: primaryButtonTitle,
+            action: advance
+        )
+    }
+
+    private var medicalLevelStep: some View {
+        SceneVocabularyCalibrationView(
+            language: store.appLanguage,
+            scene: .medical,
+            knownWords: $knownWords,
+            actionTitle: primaryButtonTitle,
+            action: advance
+        )
+    }
+
+    private var resultStep: some View {
+        CalibrationResultView(
+            language: store.appLanguage,
+            scenes: SceneVocabularyScene.all,
+            knownWords: knownWords,
+            result: calibrationResult,
+            useLevelAction: finishOnboarding,
+            retakeAction: retakeCalibration
+        )
+    }
+
     private var bottomBar: some View {
         VStack(spacing: 14) {
             if step != .login && step != .language {
@@ -347,7 +413,7 @@ struct OnboardingView: View {
         case .login: "Continue"
         case .language: "Next"
         case .welcome: store.appLanguage.text(en: "Next", zh: "下一步")
-        case .level, .transitLevel: "Next"
+        case .level, .transitLevel, .shoppingLevel, .housingLevel, .medicalLevel, .calibrationResult: "Next"
         }
     }
 
@@ -359,6 +425,14 @@ struct OnboardingView: View {
             .sceneOrange
         case .transitLevel:
             .sceneTransitBlue
+        case .shoppingLevel:
+            .sceneShoppingGreen
+        case .housingLevel:
+            .sceneHousingWarm
+        case .medicalLevel:
+            .sceneMedicalRose
+        case .calibrationResult:
+            .onboardingCanvas
         }
     }
 
@@ -372,12 +446,27 @@ struct OnboardingView: View {
         ]
     }
 
+    private var calibrationResult: CalibrationResult {
+        let scenes = SceneVocabularyScene.all
+        var categoryScores: [WordCategory: Int] = [:]
+
+        for scene in scenes {
+            categoryScores[scene.category, default: 0] += scene.words.filter { knownWords.contains($0) }.count
+        }
+
+        return CalibrationResult(
+            totalKnownCount: knownWords.count,
+            totalWordCount: totalCalibrationWordCount,
+            sceneScores: categoryScores
+        )
+    }
+
     private var inferredLevel: EnglishLevel {
-        let score = knownWords.count
-        if score <= 8 { return .gettingStarted }
-        if score <= 18 { return .everyday }
-        if score <= 30 { return .working }
-        return .confident
+        calibrationResult.inferredLevel
+    }
+
+    private var totalCalibrationWordCount: Int {
+        SceneVocabularyScene.all.reduce(0) { $0 + $1.words.count }
     }
 
     private var knownWordsSummaryTitle: String {
@@ -418,14 +507,35 @@ struct OnboardingView: View {
         case .level:
             withAnimation(.snappy) { step = .transitLevel }
         case .transitLevel:
-            store.completeOnboarding(
-                level: inferredLevel,
-                goal: .realLife,
-                calibrationScore: knownWords.count,
-                hidesKnownWords: hidesKnownWords,
-                keepsSceneContext: keepsSceneContext,
-                confirmsBeforeReview: confirmsBeforeReview
-            )
+            withAnimation(.snappy) { step = .shoppingLevel }
+        case .shoppingLevel:
+            withAnimation(.snappy) { step = .housingLevel }
+        case .housingLevel:
+            withAnimation(.snappy) { step = .medicalLevel }
+        case .medicalLevel:
+            withAnimation(.snappy) { step = .calibrationResult }
+        case .calibrationResult:
+            finishOnboarding()
+        }
+    }
+
+    private func finishOnboarding() {
+        store.completeOnboarding(
+            level: inferredLevel,
+            goal: .realLife,
+            calibrationScore: knownWords.count,
+            calibratedAt: Date(),
+            sceneCalibrationScores: calibrationResult.sceneScores,
+            hidesKnownWords: hidesKnownWords,
+            keepsSceneContext: keepsSceneContext,
+            confirmsBeforeReview: confirmsBeforeReview
+        )
+    }
+
+    private func retakeCalibration() {
+        withAnimation(.snappy) {
+            knownWords.removeAll()
+            step = .level
         }
     }
 
@@ -441,6 +551,14 @@ struct OnboardingView: View {
             withAnimation(.snappy) { step = .welcome }
         case .transitLevel:
             withAnimation(.snappy) { step = .level }
+        case .shoppingLevel:
+            withAnimation(.snappy) { step = .transitLevel }
+        case .housingLevel:
+            withAnimation(.snappy) { step = .shoppingLevel }
+        case .medicalLevel:
+            withAnimation(.snappy) { step = .housingLevel }
+        case .calibrationResult:
+            withAnimation(.snappy) { step = .medicalLevel }
         }
     }
 }
@@ -451,15 +569,19 @@ private enum OnboardingStep: Int, CaseIterable, Identifiable {
     case welcome
     case level
     case transitLevel
+    case shoppingLevel
+    case housingLevel
+    case medicalLevel
+    case calibrationResult
 
     var id: Int { rawValue }
 
     var isSceneCalibration: Bool {
-        self == .level || self == .transitLevel
+        self == .level || self == .transitLevel || self == .shoppingLevel || self == .housingLevel || self == .medicalLevel
     }
 
     static var flowSteps: [OnboardingStep] {
-        [.welcome, .level, .transitLevel]
+        [.welcome, .level, .transitLevel, .shoppingLevel, .housingLevel, .medicalLevel]
     }
 }
 
@@ -479,6 +601,10 @@ private struct SceneVocabularyScene {
     let imageName: String
     let words: [LevelProbeWord]
 
+    var category: WordCategory {
+        words.first?.category ?? .dailyLife
+    }
+
     static let ordering = SceneVocabularyScene(
         sceneNumber: "01",
         title: "ORDERING",
@@ -496,6 +622,41 @@ private struct SceneVocabularyScene {
         imageName: "TrafficScene",
         words: SceneProbeData.transitWords
     )
+
+    static let shopping = SceneVocabularyScene(
+        sceneNumber: "03",
+        title: "SHOPPING",
+        highlightColor: Color(red: 0.48, green: 0.62, blue: 0.18),
+        backgroundColor: .sceneShoppingGreen,
+        imageName: "ShoppingScene",
+        words: SceneProbeData.shoppingWords
+    )
+
+    static let housing = SceneVocabularyScene(
+        sceneNumber: "04",
+        title: "HOUSING",
+        highlightColor: Color(red: 0.7, green: 0.43, blue: 0.18),
+        backgroundColor: .sceneHousingWarm,
+        imageName: "HousingScene",
+        words: SceneProbeData.housingWords
+    )
+
+    static let medical = SceneVocabularyScene(
+        sceneNumber: "05",
+        title: "MEDICAL",
+        highlightColor: Color(red: 0.78, green: 0.24, blue: 0.38),
+        backgroundColor: .sceneMedicalRose,
+        imageName: "MedicalScene",
+        words: SceneProbeData.medicalWords
+    )
+
+    static let all: [SceneVocabularyScene] = [
+        .ordering,
+        .transit,
+        .shopping,
+        .housing,
+        .medical
+    ]
 }
 
 private enum SceneProbeData {
@@ -544,6 +705,407 @@ private enum SceneProbeData {
         LevelProbeWord(text: "detour", translation: "绕路", category: .transport, difficulty: 5),
         LevelProbeWord(text: "tow-away", translation: "拖车移走", category: .transport, difficulty: 5)
     ]
+
+    static let shoppingWords: [LevelProbeWord] = [
+        LevelProbeWord(text: "aisle", translation: "货架通道", category: .dailyLife, difficulty: 4),
+        LevelProbeWord(text: "shelf", translation: "货架", category: .dailyLife, difficulty: 3),
+        LevelProbeWord(text: "basket", translation: "购物篮", category: .dailyLife, difficulty: 2),
+        LevelProbeWord(text: "trolley", translation: "购物车", category: .dailyLife, difficulty: 3),
+        LevelProbeWord(text: "receipt", translation: "小票", category: .dailyLife, difficulty: 2),
+        LevelProbeWord(text: "checkout", translation: "收银处", category: .dailyLife, difficulty: 3),
+        LevelProbeWord(text: "barcode", translation: "条形码", category: .dailyLife, difficulty: 4),
+        LevelProbeWord(text: "discount", translation: "折扣", category: .dailyLife, difficulty: 2),
+        LevelProbeWord(text: "clearance", translation: "清仓", category: .dailyLife, difficulty: 4),
+        LevelProbeWord(text: "refund", translation: "退款", category: .dailyLife, difficulty: 3),
+        LevelProbeWord(text: "exchange", translation: "换货", category: .dailyLife, difficulty: 3),
+        LevelProbeWord(text: "organic", translation: "有机的", category: .dailyLife, difficulty: 3),
+        LevelProbeWord(text: "frozen", translation: "冷冻的", category: .dailyLife, difficulty: 3),
+        LevelProbeWord(text: "canned", translation: "罐装的", category: .dailyLife, difficulty: 3),
+        LevelProbeWord(text: "dairy", translation: "乳制品", category: .dailyLife, difficulty: 4),
+        LevelProbeWord(text: "expiry", translation: "过期日", category: .dailyLife, difficulty: 4),
+        LevelProbeWord(text: "serving", translation: "一份", category: .dailyLife, difficulty: 4),
+        LevelProbeWord(text: "ingredient", translation: "成分", category: .dailyLife, difficulty: 4),
+        LevelProbeWord(text: "nutrition", translation: "营养", category: .dailyLife, difficulty: 4),
+        LevelProbeWord(text: "perishable", translation: "易腐坏的", category: .dailyLife, difficulty: 5)
+    ]
+
+    static let housingWords: [LevelProbeWord] = [
+        LevelProbeWord(text: "rent", translation: "房租", category: .dailyLife, difficulty: 3),
+        LevelProbeWord(text: "bond", translation: "押金", category: .dailyLife, difficulty: 5),
+        LevelProbeWord(text: "lease", translation: "租约", category: .dailyLife, difficulty: 5),
+        LevelProbeWord(text: "landlord", translation: "房东", category: .dailyLife, difficulty: 4),
+        LevelProbeWord(text: "tenant", translation: "租客", category: .dailyLife, difficulty: 4),
+        LevelProbeWord(text: "flatmate", translation: "室友", category: .dailyLife, difficulty: 4),
+        LevelProbeWord(text: "furnished", translation: "带家具的", category: .dailyLife, difficulty: 5),
+        LevelProbeWord(text: "unfurnished", translation: "不带家具的", category: .dailyLife, difficulty: 5),
+        LevelProbeWord(text: "utilities", translation: "水电网等费用", category: .dailyLife, difficulty: 5),
+        LevelProbeWord(text: "electricity", translation: "电", category: .dailyLife, difficulty: 3),
+        LevelProbeWord(text: "water", translation: "水费/用水", category: .dailyLife, difficulty: 2),
+        LevelProbeWord(text: "internet", translation: "网络", category: .dailyLife, difficulty: 2),
+        LevelProbeWord(text: "bill", translation: "账单", category: .dailyLife, difficulty: 3),
+        LevelProbeWord(text: "meter", translation: "表/计量器", category: .dailyLife, difficulty: 4),
+        LevelProbeWord(text: "inspection", translation: "检查", category: .dailyLife, difficulty: 5),
+        LevelProbeWord(text: "maintenance", translation: "维修", category: .dailyLife, difficulty: 5),
+        LevelProbeWord(text: "repair", translation: "修理", category: .dailyLife, difficulty: 3),
+        LevelProbeWord(text: "appliance", translation: "家电", category: .dailyLife, difficulty: 5),
+        LevelProbeWord(text: "heating", translation: "暖气", category: .dailyLife, difficulty: 4),
+        LevelProbeWord(text: "mould", translation: "霉菌", category: .dailyLife, difficulty: 5)
+    ]
+
+    static let medicalWords: [LevelProbeWord] = [
+        LevelProbeWord(text: "symptom", translation: "症状", category: .medical, difficulty: 3),
+        LevelProbeWord(text: "fever", translation: "发烧", category: .medical, difficulty: 2),
+        LevelProbeWord(text: "cough", translation: "咳嗽", category: .medical, difficulty: 2),
+        LevelProbeWord(text: "sore throat", translation: "喉咙痛", category: .medical, difficulty: 4),
+        LevelProbeWord(text: "headache", translation: "头痛", category: .medical, difficulty: 3),
+        LevelProbeWord(text: "nausea", translation: "恶心", category: .medical, difficulty: 5),
+        LevelProbeWord(text: "dizzy", translation: "头晕", category: .medical, difficulty: 3),
+        LevelProbeWord(text: "pain", translation: "疼痛", category: .medical, difficulty: 2),
+        LevelProbeWord(text: "swelling", translation: "肿胀", category: .medical, difficulty: 4),
+        LevelProbeWord(text: "allergy", translation: "过敏", category: .medical, difficulty: 3),
+        LevelProbeWord(text: "appointment", translation: "预约", category: .medical, difficulty: 3),
+        LevelProbeWord(text: "clinic", translation: "诊所", category: .medical, difficulty: 3),
+        LevelProbeWord(text: "pharmacy", translation: "药房", category: .medical, difficulty: 4),
+        LevelProbeWord(text: "prescription", translation: "处方", category: .medical, difficulty: 5),
+        LevelProbeWord(text: "medicine", translation: "药", category: .medical, difficulty: 2),
+        LevelProbeWord(text: "dose", translation: "剂量", category: .medical, difficulty: 4),
+        LevelProbeWord(text: "tablet", translation: "药片", category: .medical, difficulty: 3),
+        LevelProbeWord(text: "capsule", translation: "胶囊", category: .medical, difficulty: 4),
+        LevelProbeWord(text: "side effect", translation: "副作用", category: .medical, difficulty: 4),
+        LevelProbeWord(text: "emergency", translation: "紧急情况", category: .medical, difficulty: 4)
+    ]
+}
+
+#if DEBUG
+private enum OnboardingPreviewKnownWords {
+    static var sample: Set<LevelProbeWord> {
+        Set(
+            Array(SceneProbeData.cafeWords.prefix(15)) +
+            Array(SceneProbeData.transitWords.prefix(9)) +
+            Array(SceneProbeData.shoppingWords.prefix(13)) +
+            Array(SceneProbeData.housingWords.prefix(6)) +
+            Array(SceneProbeData.medicalWords.prefix(5))
+        )
+    }
+}
+#endif
+
+private struct CalibrationResultView: View {
+    let language: AppLanguage
+    let scenes: [SceneVocabularyScene]
+    let knownWords: Set<LevelProbeWord>
+    let result: CalibrationResult
+    let useLevelAction: () -> Void
+    let retakeAction: () -> Void
+
+    private var sceneResults: [SceneCalibrationSummary] {
+        scenes.map { scene in
+            SceneCalibrationSummary(
+                scene: scene,
+                knownCount: scene.words.filter { knownWords.contains($0) }.count
+            )
+        }
+    }
+
+    private var strongestScene: SceneCalibrationSummary? {
+        sceneResults.max { $0.knownCount < $1.knownCount }
+    }
+
+    private var practiceScene: SceneCalibrationSummary? {
+        sceneResults.min { $0.knownCount < $1.knownCount }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 18) {
+                    header
+                    scoreCard
+                    sceneBarsCard
+                    impactCard
+                }
+                .padding(.horizontal, 22)
+                .padding(.top, 18)
+                .padding(.bottom, 20)
+            }
+
+            footerButtons
+        }
+        .background(Color.onboardingCanvas.ignoresSafeArea())
+    }
+
+    private var header: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "checkmark.seal.fill")
+                .font(.system(size: 38, weight: .semibold))
+                .foregroundStyle(Color.brandPurple)
+                .frame(width: 72, height: 72)
+                .background(.white.opacity(0.74), in: Circle())
+                .shadow(color: .black.opacity(0.08), radius: 14, y: 8)
+
+            Text(language.text(en: "Your Scene English Level", zh: "你的生活场景英语水平"))
+                .font(.system(size: 24, weight: .bold, design: .serif))
+                .foregroundStyle(.black.opacity(0.88))
+                .multilineTextAlignment(.center)
+
+            Text(language.text(en: "This is not an exam score. It helps SeenWords hide words that are already too easy for you.", zh: "这不是正式考试分数，它会帮助 SeenWords 少推荐你已经会的简单词。"))
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.black.opacity(0.52))
+                .multilineTextAlignment(.center)
+                .lineSpacing(2)
+                .padding(.horizontal, 8)
+        }
+    }
+
+    private var scoreCard: some View {
+        VStack(spacing: 16) {
+            HStack(alignment: .center, spacing: 18) {
+                ZStack {
+                    Circle()
+                        .stroke(Color.brandPurple.opacity(0.12), lineWidth: 10)
+                    Circle()
+                        .trim(from: 0, to: resultRatio)
+                        .stroke(Color.brandPurple, style: StrokeStyle(lineWidth: 10, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+
+                    VStack(spacing: 2) {
+                        Text("\(result.totalKnownCount)")
+                            .font(.system(size: 28, weight: .black, design: .rounded))
+                        Text("/ \(result.totalWordCount)")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .frame(width: 104, height: 104)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(result.inferredLevel.title(language))
+                        .font(.system(size: 28, weight: .bold, design: .serif))
+                        .foregroundStyle(.black.opacity(0.9))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.76)
+
+                    Text(levelDescription)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    HStack(spacing: 8) {
+                        if let strongestScene {
+                            CalibrationMiniPill(
+                                icon: "sparkles",
+                                text: language.text(en: "Strong in \(strongestScene.shortTitle(language))", zh: "\(strongestScene.shortTitle(language)) 较熟")
+                            )
+                        }
+                    }
+                }
+
+                Spacer(minLength: 0)
+            }
+
+            if let practiceScene {
+                Divider()
+                HStack(spacing: 10) {
+                    Image(systemName: "scope")
+                        .foregroundStyle(Color.mainWarning)
+                    Text(language.text(en: "Next best focus: \(practiceScene.shortTitle(language))", zh: "接下来最值得练：\(practiceScene.shortTitle(language))"))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.black.opacity(0.74))
+                        .lineLimit(2)
+                    Spacer()
+                }
+            }
+        }
+        .padding(18)
+        .background(.white.opacity(0.76), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(.white.opacity(0.82), lineWidth: 1)
+        }
+    }
+
+    private var sceneBarsCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(language.text(en: "Scene familiarity", zh: "五个场景熟悉度"))
+                .font(.headline.weight(.bold))
+
+            VStack(spacing: 13) {
+                ForEach(sceneResults) { summary in
+                    CalibrationSceneScoreRow(summary: summary, language: language)
+                }
+            }
+        }
+        .padding(18)
+        .background(.white.opacity(0.72), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+    }
+
+    private var impactCard: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "camera.viewfinder")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(Color.brandPurple)
+                .frame(width: 42, height: 42)
+                .background(Color.brandPurple.opacity(0.1), in: Circle())
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text(language.text(en: "How this changes your photos", zh: "这会怎样影响拍照推荐"))
+                    .font(.subheadline.weight(.bold))
+                Text(language.text(en: "Future scans will down-rank the basic words you already know and surface scene words you are more likely to need.", zh: "之后拍照时，会更少显示你已经会的基础词，优先推荐你更可能需要的场景词。"))
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .lineSpacing(2)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+        .background(Color.brandPurple.opacity(0.08), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+    }
+
+    private var footerButtons: some View {
+        VStack(spacing: 10) {
+            Button(action: useLevelAction) {
+                Text(language.text(en: "Use This Level", zh: "使用这个水平"))
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(Color(red: 0.96, green: 0.86, blue: 0.52))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 52)
+                    .background(Color(red: 0.12, green: 0.11, blue: 0.1), in: Capsule())
+            }
+            .buttonStyle(.plain)
+
+            Button(action: retakeAction) {
+                Text(language.text(en: "Retake", zh: "重新测试"))
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(Color.brandPurple)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 44)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 24)
+        .padding(.top, 12)
+        .padding(.bottom, 18)
+        .background(.ultraThinMaterial)
+    }
+
+    private var resultRatio: CGFloat {
+        guard result.totalWordCount > 0 else { return 0 }
+        return CGFloat(result.totalKnownCount) / CGFloat(result.totalWordCount)
+    }
+
+    private var levelDescription: String {
+        switch result.inferredLevel {
+        case .gettingStarted:
+            language.text(en: "You are still collecting daily-life basics.", zh: "你正在积累生活英语基础词。")
+        case .everyday:
+            language.text(en: "You can handle many everyday scenes.", zh: "你已经能应对不少日常场景。")
+        case .working:
+            language.text(en: "You know many practical words for work and errands.", zh: "你认识不少工作和办事会用到的词。")
+        case .confident:
+            language.text(en: "Most basic scene words can stay out of your way.", zh: "多数基础场景词可以先帮你隐藏。")
+        }
+    }
+}
+
+private struct SceneCalibrationSummary: Identifiable {
+    let scene: SceneVocabularyScene
+    let knownCount: Int
+
+    var id: String { scene.sceneNumber }
+    var totalCount: Int { scene.words.count }
+    var ratio: CGFloat {
+        guard totalCount > 0 else { return 0 }
+        return CGFloat(knownCount) / CGFloat(totalCount)
+    }
+
+    func shortTitle(_ language: AppLanguage) -> String {
+        switch scene.title {
+        case "ORDERING": language.text(en: "Cafe", zh: "点单")
+        case "TRAFFIC": language.text(en: "Transport", zh: "交通")
+        case "SHOPPING": language.text(en: "Shopping", zh: "超市")
+        case "HOUSING": language.text(en: "Housing", zh: "租房")
+        case "MEDICAL": language.text(en: "Medical", zh: "看病")
+        default: scene.title.capitalized
+        }
+    }
+
+    func fullTitle(_ language: AppLanguage) -> String {
+        switch scene.title {
+        case "ORDERING": language.text(en: "Cafe ordering", zh: "咖啡点单")
+        case "TRAFFIC": language.text(en: "Transport signs", zh: "交通路牌")
+        case "SHOPPING": language.text(en: "Supermarket", zh: "超市购物")
+        case "HOUSING": language.text(en: "Housing and utilities", zh: "租房家居")
+        case "MEDICAL": language.text(en: "Clinic and pharmacy", zh: "看病药房")
+        default: scene.title.capitalized
+        }
+    }
+
+    var symbol: String {
+        switch scene.title {
+        case "ORDERING": "cup.and.saucer.fill"
+        case "TRAFFIC": "tram.fill"
+        case "SHOPPING": "basket.fill"
+        case "HOUSING": "house.fill"
+        case "MEDICAL": "cross.case.fill"
+        default: scene.category.icon
+        }
+    }
+}
+
+private struct CalibrationSceneScoreRow: View {
+    let summary: SceneCalibrationSummary
+    let language: AppLanguage
+
+    var body: some View {
+        VStack(spacing: 7) {
+            HStack(spacing: 10) {
+                Image(systemName: summary.symbol)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(summary.scene.highlightColor)
+                    .frame(width: 28, height: 28)
+                    .background(summary.scene.highlightColor.opacity(0.12), in: Circle())
+
+                Text(summary.fullTitle(language))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.black.opacity(0.78))
+
+                Spacer()
+
+                Text("\(summary.knownCount)/\(summary.totalCount)")
+                    .font(.caption.weight(.black))
+                    .foregroundStyle(.black.opacity(0.58))
+            }
+
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.black.opacity(0.07))
+
+                    Capsule()
+                        .fill(summary.scene.highlightColor)
+                        .frame(width: proxy.size.width * summary.ratio)
+                }
+            }
+            .frame(height: 9)
+        }
+    }
+}
+
+private struct CalibrationMiniPill: View {
+    let icon: String
+    let text: String
+
+    var body: some View {
+        Label(text, systemImage: icon)
+            .font(.caption.weight(.bold))
+            .foregroundStyle(Color.brandPurple)
+            .lineLimit(1)
+            .minimumScaleFactor(0.74)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(Color.brandPurple.opacity(0.1), in: Capsule())
+    }
 }
 
 private struct SceneVocabularyCalibrationView: View {
@@ -1252,6 +1814,9 @@ private extension Color {
     static let onboardingCanvas = Color(red: 0.96, green: 0.94, blue: 0.94)
     static let sceneOrange = Color(red: 0.976, green: 0.847, blue: 0.651)
     static let sceneTransitBlue = Color(red: 0.788, green: 0.969, blue: 0.996)
+    static let sceneShoppingGreen = Color(red: 0.9, green: 0.94, blue: 0.78)
+    static let sceneHousingWarm = Color(red: 0.94, green: 0.86, blue: 0.76)
+    static let sceneMedicalRose = Color(red: 0.98, green: 0.84, blue: 0.86)
 }
 
 #if DEBUG

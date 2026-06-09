@@ -2,14 +2,15 @@ import SwiftUI
 
 struct ReviewView: View {
     @EnvironmentObject private var store: WordStore
-    @State private var selectedMode = ReviewHomeMode.date
+    @State private var selectedMode = ReviewHomeMode.category
     @State private var heatmapRange = HeatmapRange.month
+    @State private var heatmapPageOffset = 0
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 reviewHeader
-                ReviewHeatmapCard(range: $heatmapRange)
+                ReviewHeatmapCard(range: $heatmapRange, pageOffset: $heatmapPageOffset)
 
                 Picker(store.appLanguage.text(en: "Review view", zh: "复习方式"), selection: $selectedMode) {
                     ForEach(ReviewHomeMode.allCases) { mode in
@@ -43,19 +44,19 @@ struct ReviewView: View {
                     title: store.appLanguage.text(en: "Today", zh: "今天"),
                     value: "\(store.todayReviewCount)",
                     symbol: "flame.fill",
-                    color: .orange
+                    color: .mainWarning
                 )
                 ReviewMetricPill(
                     title: store.appLanguage.text(en: "This week", zh: "本周"),
                     value: "\(store.weekReviewCount)",
                     symbol: "calendar",
-                    color: .brandPurple
+                    color: .mainAccent
                 )
                 ReviewMetricPill(
                     title: store.appLanguage.text(en: "To review", zh: "可复习"),
                     value: "\(store.reviewableWords.count)",
                     symbol: "text.word.spacing",
-                    color: .green
+                    color: .mainAction
                 )
             }
         }
@@ -82,6 +83,7 @@ struct LightReviewSessionView: View {
     @State private var currentIndex = 0
     @State private var recognizedCount = 0
     @State private var needsAnotherLookCount = 0
+    @State private var skippedCount = 0
 
     private var isComplete: Bool {
         !words.isEmpty && currentIndex >= words.count
@@ -94,9 +96,10 @@ struct LightReviewSessionView: View {
                     EmptyReviewSessionView()
                 } else if isComplete {
                     LightReviewCompleteView(
-                        reviewedCount: words.count,
+                        reviewedCount: recognizedCount + needsAnotherLookCount,
                         recognizedCount: recognizedCount,
                         needsAnotherLookCount: needsAnotherLookCount,
+                        skippedCount: skippedCount,
                         onDone: { dismiss() }
                     )
                 } else {
@@ -125,14 +128,14 @@ struct LightReviewSessionView: View {
                 Spacer()
                 Text("\(currentIndex + 1)/\(words.count)")
                     .font(.caption.weight(.bold))
-                    .foregroundStyle(Color.brandPurple)
+                    .foregroundStyle(Color.mainAccent)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 7)
-                    .background(Color.brandPurple.opacity(0.12), in: Capsule())
+                    .background(Color.mainAccent.opacity(0.12), in: Capsule())
             }
 
             ProgressView(value: Double(currentIndex), total: Double(max(words.count, 1)))
-                .tint(.brandPurple)
+                .tint(.mainAccent)
         }
         .padding(16)
         .background(.background, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
@@ -149,18 +152,18 @@ struct LightReviewSessionView: View {
             }
             .buttonStyle(.bordered)
             .controlSize(.large)
-            .tint(.orange)
+            .tint(.mainWarning)
 
             Button {
-                advance(with: .recognized)
+                skipCurrentWord()
             } label: {
-                Label(store.appLanguage.text(en: "Recognized", zh: "认识了"), systemImage: "checkmark.circle.fill")
+                Label(store.appLanguage.text(en: "Skip", zh: "跳过"), systemImage: "forward.fill")
                     .font(.headline)
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
-            .tint(.brandPurple)
+            .tint(.mainAccent)
         }
     }
 
@@ -176,6 +179,15 @@ struct LightReviewSessionView: View {
             needsAnotherLookCount += 1
         }
 
+        withAnimation(.snappy) {
+            currentIndex += 1
+        }
+    }
+
+    private func skipCurrentWord() {
+        guard currentIndex < words.count else { return }
+
+        skippedCount += 1
         withAnimation(.snappy) {
             currentIndex += 1
         }
@@ -253,9 +265,9 @@ private struct ReviewDayRow: View {
             } else {
                 Image(systemName: "calendar")
                     .font(.title2)
-                    .foregroundStyle(Color.brandPurple)
+                    .foregroundStyle(Color.mainAccent)
                     .frame(width: 84, height: 76)
-                    .background(Color.brandPurple.opacity(0.1), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .background(Color.mainAccent.opacity(0.1), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
 
             VStack(alignment: .leading, spacing: 8) {
@@ -265,7 +277,7 @@ private struct ReviewDayRow: View {
                     Spacer()
                     Text(store.appLanguage.text(en: "\(section.words.count) words", zh: "\(section.words.count) 个词"))
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(Color.brandPurple)
+                        .foregroundStyle(Color.mainAccent)
                 }
 
                 Text(sceneSummary)
@@ -356,91 +368,272 @@ private struct ReviewCategoryRow: View {
 private struct ReviewHeatmapCard: View {
     @EnvironmentObject private var store: WordStore
     @Binding var range: HeatmapRange
+    @Binding var pageOffset: Int
 
-    private var days: [HeatmapDay] {
-        store.reviewHeatmap(range: range)
-    }
-
-    private var columns: [GridItem] {
-        Array(
-            repeating: GridItem(.flexible(minimum: 6, maximum: 18), spacing: cellSpacing),
-            count: range.columnCount
-        )
-    }
-
-    private var cellSpacing: CGFloat {
-        range == .year ? 3 : 5
-    }
+    private let selectableRanges: [HeatmapRange] = [.week, .month]
 
     private var maxCount: Int {
-        max(days.map(\.reviewedWordCount).max() ?? 0, 1)
+        max(calendarDays.map(\.reviewedWordCount).max() ?? 0, 1)
+    }
+
+    private var calendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.locale = reviewLocale(for: store.appLanguage)
+        calendar.firstWeekday = 1
+        return calendar
+    }
+
+    private var anchorDate: Date {
+        let component: Calendar.Component = range == .week ? .weekOfYear : .month
+        return calendar.date(byAdding: component, value: pageOffset, to: Date()) ?? Date()
+    }
+
+    private var calendarDays: [ReviewCalendarDay] {
+        switch range {
+        case .week:
+            return weekDays()
+        case .month, .year:
+            return monthDays()
+        }
+    }
+
+    private var weekdaySymbols: [String] {
+        switch store.appLanguage {
+        case .simplifiedChinese:
+            return ["日", "一", "二", "三", "四", "五", "六"]
+        default:
+            return ["S", "M", "T", "W", "T", "F", "S"]
+        }
+    }
+
+    private var periodTitle: String {
+        let formatter = DateFormatter()
+        formatter.locale = reviewLocale(for: store.appLanguage)
+
+        switch range {
+        case .week:
+            formatter.dateStyle = .medium
+        case .month, .year:
+            formatter.setLocalizedDateFormatFromTemplate("MMMM yyyy")
+        }
+
+        return formatter.string(from: anchorDate)
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(spacing: 14) {
             HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(store.appLanguage.text(en: "Review heatmap", zh: "复习热力图"))
-                        .font(.headline)
-                    Text(store.appLanguage.text(en: "Darker means more words brushed that day.", zh: "颜色越深，表示那天刷过的词越多。"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                Button {
+                    withAnimation(.snappy(duration: 0.22)) {
+                        pageOffset -= 1
+                    }
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(Color.mainAccent)
+                        .frame(width: 34, height: 34)
+                        .background(Color.mainAccent.opacity(0.08), in: Circle())
                 }
+                .accessibilityLabel(previousTitle)
+
                 Spacer()
+
+                Text(periodTitle)
+                    .font(.headline.weight(.semibold))
+                    .monospacedDigit()
+
+                Spacer()
+
+                Button {
+                    withAnimation(.snappy(duration: 0.22)) {
+                        pageOffset += 1
+                    }
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(Color.mainAccent)
+                        .frame(width: 34, height: 34)
+                        .background(Color.mainAccent.opacity(0.08), in: Circle())
+                }
+                .accessibilityLabel(nextTitle)
             }
 
             Picker(store.appLanguage.text(en: "Heatmap range", zh: "热力图范围"), selection: $range) {
-                ForEach(HeatmapRange.allCases) { range in
+                ForEach(selectableRanges) { range in
                     Text(range.title(store.appLanguage)).tag(range)
                 }
             }
             .pickerStyle(.segmented)
 
-            LazyVGrid(columns: columns, spacing: cellSpacing) {
-                ForEach(days) { day in
-                    RoundedRectangle(cornerRadius: range == .year ? 2 : 4, style: .continuous)
-                        .fill(color(for: day.reviewedWordCount))
-                        .aspectRatio(1, contentMode: .fit)
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 7), spacing: 10) {
+                ForEach(Array(weekdaySymbols.enumerated()), id: \.offset) { _, symbol in
+                    Text(symbol)
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(Color.mainWarning)
+                        .frame(maxWidth: .infinity)
+                }
+
+                ForEach(calendarDays) { day in
+                    ReviewCalendarDayCell(day: day, maxCount: maxCount)
                         .accessibilityLabel(accessibilityText(for: day))
                 }
-            }
-
-            HStack(spacing: 6) {
-                Text(store.appLanguage.text(en: "Less", zh: "少"))
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                ForEach(0 ..< 4, id: \.self) { index in
-                    RoundedRectangle(cornerRadius: 3, style: .continuous)
-                        .fill(color(for: index))
-                        .frame(width: 14, height: 14)
-                }
-                Text(store.appLanguage.text(en: "More", zh: "多"))
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                Spacer()
             }
         }
         .padding(16)
         .background(.background, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .onChange(of: range) { _, _ in
+            withAnimation(.snappy(duration: 0.22)) {
+                pageOffset = 0
+            }
+        }
     }
 
-    private func color(for count: Int) -> Color {
-        guard count > 0 else {
-            return Color.primary.opacity(0.08)
+    private var previousTitle: String {
+        switch range {
+        case .week:
+            store.appLanguage.text(en: "Previous week", zh: "上一周")
+        case .month, .year:
+            store.appLanguage.text(en: "Previous month", zh: "上个月")
+        }
+    }
+
+    private var nextTitle: String {
+        switch range {
+        case .week:
+            store.appLanguage.text(en: "Next week", zh: "下一周")
+        case .month, .year:
+            store.appLanguage.text(en: "Next month", zh: "下个月")
+        }
+    }
+
+    private func weekDays() -> [ReviewCalendarDay] {
+        let start = startOfWeek(for: anchorDate)
+        return (0 ..< 7).compactMap { offset in
+            guard let date = calendar.date(byAdding: .day, value: offset, to: start) else {
+                return nil
+            }
+
+            return day(for: date)
+        }
+    }
+
+    private func monthDays() -> [ReviewCalendarDay] {
+        guard
+            let monthInterval = calendar.dateInterval(of: .month, for: anchorDate),
+            let dayRange = calendar.range(of: .day, in: .month, for: monthInterval.start)
+        else {
+            return []
         }
 
-        let ratio = Double(count) / Double(maxCount)
-        return Color.brandPurple.opacity(0.24 + min(ratio, 1) * 0.62)
+        let firstDay = calendar.startOfDay(for: monthInterval.start)
+        let leadingBlankCount = (calendar.component(.weekday, from: firstDay) - calendar.firstWeekday + 7) % 7
+        var days: [ReviewCalendarDay] = (0 ..< leadingBlankCount).map { index in
+            ReviewCalendarDay.empty(id: "leading-\(index)")
+        }
+
+        for dayNumber in dayRange {
+            if let date = calendar.date(byAdding: .day, value: dayNumber - 1, to: firstDay) {
+                days.append(day(for: date))
+            }
+        }
+
+        let trailingBlankCount = (7 - (days.count % 7)) % 7
+        days.append(contentsOf: (0 ..< trailingBlankCount).map { index in
+            ReviewCalendarDay.empty(id: "trailing-\(index)")
+        })
+
+        return days
     }
 
-    private func accessibilityText(for day: HeatmapDay) -> String {
+    private func startOfWeek(for date: Date) -> Date {
+        let startOfDay = calendar.startOfDay(for: date)
+        let weekday = calendar.component(.weekday, from: startOfDay)
+        let dayOffset = (weekday - calendar.firstWeekday + 7) % 7
+        return calendar.date(byAdding: .day, value: -dayOffset, to: startOfDay) ?? startOfDay
+    }
+
+    private func day(for date: Date) -> ReviewCalendarDay {
+        let startOfDay = calendar.startOfDay(for: date)
+        let count = store.reviewEvents.filter {
+            calendar.isDate($0.reviewedAt, inSameDayAs: startOfDay)
+        }.count
+
+        return ReviewCalendarDay(
+            id: "\(startOfDay.timeIntervalSince1970)",
+            date: startOfDay,
+            dayNumber: calendar.component(.day, from: startOfDay),
+            reviewedWordCount: count,
+            isToday: calendar.isDateInToday(startOfDay)
+        )
+    }
+
+    private func accessibilityText(for day: ReviewCalendarDay) -> String {
+        guard let date = day.date else {
+            return ""
+        }
+
         let formatter = DateFormatter()
         formatter.locale = reviewLocale(for: store.appLanguage)
         formatter.dateStyle = .medium
         return store.appLanguage.text(
-            en: "\(formatter.string(from: day.date)): \(day.reviewedWordCount) words reviewed",
-            zh: "\(formatter.string(from: day.date))：复习 \(day.reviewedWordCount) 个词"
+            en: "\(formatter.string(from: date)): \(day.reviewedWordCount) words reviewed",
+            zh: "\(formatter.string(from: date))：复习 \(day.reviewedWordCount) 个词"
         )
+    }
+}
+
+private struct ReviewCalendarDay: Identifiable {
+    let id: String
+    let date: Date?
+    let dayNumber: Int?
+    let reviewedWordCount: Int
+    let isToday: Bool
+
+    static func empty(id: String) -> ReviewCalendarDay {
+        ReviewCalendarDay(id: id, date: nil, dayNumber: nil, reviewedWordCount: 0, isToday: false)
+    }
+}
+
+private struct ReviewCalendarDayCell: View {
+    let day: ReviewCalendarDay
+    let maxCount: Int
+
+    var body: some View {
+        VStack(spacing: 4) {
+            ZStack {
+                Circle()
+                    .fill(fillColor)
+                    .frame(width: 22, height: 22)
+                if day.isToday {
+                    Circle()
+                        .stroke(Color.mainWarning, lineWidth: 2)
+                        .frame(width: 24, height: 24)
+                }
+            }
+            Text(day.dayNumber.map { String($0) } ?? "")
+                .font(.caption2.weight(day.isToday ? .bold : .medium))
+                .foregroundStyle(day.isToday ? Color.mainWarning : Color.secondary)
+                .monospacedDigit()
+        }
+        .frame(maxWidth: .infinity, minHeight: 34)
+        .opacity(day.date == nil ? 0 : 1)
+    }
+
+    private var fillColor: Color {
+        guard day.date != nil else {
+            return .clear
+        }
+
+        if day.isToday && day.reviewedWordCount > 0 {
+            return .mainWarning.opacity(0.88)
+        }
+
+        guard day.reviewedWordCount > 0 else {
+            return Color.primary.opacity(0.055)
+        }
+
+        let ratio = Double(day.reviewedWordCount) / Double(max(maxCount, 1))
+        return Color.mainAccent.opacity(0.24 + min(ratio, 1) * 0.58)
     }
 }
 
@@ -461,38 +654,10 @@ private struct LightReviewWordCard: View {
                 Spacer()
                 Text(word.nextReviewText(store.appLanguage))
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color.brandPurple)
+                    .foregroundStyle(Color.mainAccent)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 7)
-                    .background(Color.brandPurple.opacity(0.1), in: Capsule())
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text(word.text)
-                    .font(.largeTitle.bold())
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.72)
-                Text(word.meaning)
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(Color.brandPurple)
-            }
-
-            VStack(alignment: .leading, spacing: 10) {
-                LightReviewDetailRow(
-                    title: store.appLanguage.text(en: "Seen in", zh: "出现位置"),
-                    value: word.sourceSceneText(store.appLanguage),
-                    symbol: "viewfinder"
-                )
-                LightReviewDetailRow(
-                    title: store.appLanguage.text(en: "Original line", zh: "原场景句子"),
-                    value: word.contextLine,
-                    symbol: "quote.opening"
-                )
-                LightReviewDetailRow(
-                    title: store.appLanguage.text(en: "Use next time", zh: "下次怎么用"),
-                    value: word.nextUseText(store.appLanguage),
-                    symbol: "person.wave.2.fill"
-                )
+                    .background(Color.mainAccent.opacity(0.1), in: Capsule())
             }
         }
         .padding(16)
@@ -505,13 +670,14 @@ private struct LightReviewCompleteView: View {
     let reviewedCount: Int
     let recognizedCount: Int
     let needsAnotherLookCount: Int
+    let skippedCount: Int
     let onDone: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             Image(systemName: "checkmark.seal.fill")
                 .font(.largeTitle)
-                .foregroundStyle(.green)
+                .foregroundStyle(Color.mainAction)
 
             VStack(alignment: .leading, spacing: 6) {
                 Text(store.appLanguage.text(en: "Review complete", zh: "复习完成"))
@@ -522,9 +688,9 @@ private struct LightReviewCompleteView: View {
             }
 
             HStack(spacing: 12) {
-                SummaryMetricCard(title: store.appLanguage.text(en: "Reviewed", zh: "已刷"), value: "\(reviewedCount)", color: .brandPurple)
-                SummaryMetricCard(title: store.appLanguage.text(en: "Recognized", zh: "认识了"), value: "\(recognizedCount)", color: .green)
-                SummaryMetricCard(title: store.appLanguage.text(en: "See again", zh: "再看"), value: "\(needsAnotherLookCount)", color: .orange)
+                SummaryMetricCard(title: store.appLanguage.text(en: "Reviewed", zh: "已刷"), value: "\(reviewedCount)", color: .mainAccent)
+                SummaryMetricCard(title: store.appLanguage.text(en: "Skipped", zh: "已跳过"), value: "\(skippedCount)", color: .mainAction)
+                SummaryMetricCard(title: store.appLanguage.text(en: "See again", zh: "再看"), value: "\(needsAnotherLookCount)", color: .mainWarning)
             }
 
             Button {
@@ -536,7 +702,7 @@ private struct LightReviewCompleteView: View {
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
-            .tint(.brandPurple)
+            .tint(.mainAccent)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(18)
@@ -555,7 +721,7 @@ private struct EmptyReviewSessionView: View {
     }
 }
 
-private struct ReviewEmptyState: View {
+struct ReviewEmptyState: View {
     let symbol: String
     let text: String
 
@@ -563,7 +729,7 @@ private struct ReviewEmptyState: View {
         VStack(spacing: 12) {
             Image(systemName: symbol)
                 .font(.system(size: 32, weight: .semibold))
-                .foregroundStyle(Color.brandPurple)
+                .foregroundStyle(Color.mainAccent)
             Text(text)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
@@ -601,7 +767,7 @@ private struct ReviewMetricPill: View {
     }
 }
 
-private struct LightReviewDetailRow: View {
+struct LightReviewDetailRow: View {
     let title: String
     let value: String
     let symbol: String
@@ -609,7 +775,7 @@ private struct LightReviewDetailRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: symbol)
-                .foregroundStyle(Color.brandPurple)
+                .foregroundStyle(Color.mainAccent)
                 .frame(width: 22)
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)

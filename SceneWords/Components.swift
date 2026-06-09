@@ -17,7 +17,7 @@ struct CategoryBadge: View {
 
 struct WordChip: View {
     let text: String
-    var color: Color = .brandPurple
+    var color: Color = .mainAccent
     var isSelected = false
 
     var body: some View {
@@ -32,7 +32,7 @@ struct WordChip: View {
 
 struct PackAvatar: View {
     let initial: String
-    var color: Color = .brandPurple
+    var color: Color = .mainAccent
 
     var body: some View {
         Text(initial.isEmpty ? "?" : initial)
@@ -46,7 +46,7 @@ struct PackAvatar: View {
 
 struct PackTagChip: View {
     let text: String
-    var color: Color = .brandPurple
+    var color: Color = .mainAccent
 
     var body: some View {
         Text(text)
@@ -323,7 +323,7 @@ private struct PhoneScanSceneMock: View {
                         title: "decaf",
                         meaning: "without caffeine",
                         symbol: "cup.and.saucer.fill",
-                        color: .brandPurple,
+                        color: .mainAccent,
                         count: 1,
                         x: width * 0.8,
                         y: height * 0.26
@@ -332,7 +332,7 @@ private struct PhoneScanSceneMock: View {
                         title: "surcharge",
                         meaning: "additional charge",
                         symbol: "dollarsign.circle.fill",
-                        color: .orange,
+                        color: .mainWarning,
                         count: 2,
                         x: width * 0.805,
                         y: height * 0.5
@@ -341,7 +341,7 @@ private struct PhoneScanSceneMock: View {
                         title: "oat milk",
                         meaning: "milk made from oats",
                         symbol: "leaf.fill",
-                        color: .green,
+                        color: .mainAction,
                         count: 3,
                         x: width * 0.795,
                         y: height * 0.74
@@ -458,7 +458,7 @@ private struct CafeTableBackground: View {
                     .frame(width: width * 0.2, height: height * 0.44)
                     .overlay(alignment: .bottom) {
                         Circle()
-                            .fill(Color.green.opacity(0.18))
+                            .fill(Color.paletteSage.opacity(0.18))
                             .frame(width: width * 0.18)
                             .offset(y: height * 0.06)
                     }
@@ -776,11 +776,11 @@ private struct CafeMenuSheet: View {
     private func highlightColor(for entry: CafeMenuEntry) -> Color {
         switch entry.extractedIndex {
         case 1:
-            return .brandPurple
+            return .mainAccent
         case 2:
-            return .orange
+            return .mainWarning
         case 3:
-            return .green
+            return .mainAction
         default:
             return .brandYellow
         }
@@ -905,7 +905,7 @@ private struct PhoneScannerMock: View {
                     .overlay {
                         Image(systemName: "viewfinder")
                             .font(.system(size: 14, weight: .bold))
-                            .foregroundStyle(Color.brandPurple)
+                            .foregroundStyle(Color.mainAccent)
                     }
                     .scaleEffect(isCapturing ? 0.84 : 1)
                     .position(x: width / 2, y: height - 24)
@@ -932,7 +932,7 @@ private struct PhoneScanOverlay: View {
                 Rectangle()
                     .fill(
                         LinearGradient(
-                            colors: [.clear, Color.brandPurple.opacity(0.56), .clear],
+                            colors: [.clear, Color.mainAccent.opacity(0.56), .clear],
                             startPoint: .top,
                             endPoint: .bottom
                         )
@@ -942,9 +942,9 @@ private struct PhoneScanOverlay: View {
                     .blendMode(.screen)
 
                 Capsule()
-                    .fill(Color.brandPurple.opacity(0.88))
+                    .fill(Color.mainAccent.opacity(0.88))
                     .frame(width: width * 0.82, height: 3)
-                    .shadow(color: Color.brandPurple.opacity(0.7), radius: 5)
+                    .shadow(color: Color.mainAccent.opacity(0.7), radius: 5)
                     .position(x: width / 2, y: 22 + (height - 44) * scanProgress)
             }
         }
@@ -1034,7 +1034,7 @@ private struct ScanOverlay: View {
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(Color.brandPurple.opacity(pulse ? 0.82 : 0.35), lineWidth: pulse ? 3 : 2)
+                .stroke(Color.mainAccent.opacity(pulse ? 0.82 : 0.35), lineWidth: pulse ? 3 : 2)
                 .padding(4)
 
             RoundedRectangle(cornerRadius: 20, style: .continuous)
@@ -1044,7 +1044,7 @@ private struct ScanOverlay: View {
             Rectangle()
                 .fill(
                     LinearGradient(
-                        colors: [.clear, Color.brandPurple.opacity(0.38), .clear],
+                        colors: [.clear, Color.mainAccent.opacity(0.38), .clear],
                         startPoint: .top,
                         endPoint: .bottom
                     )
@@ -1081,7 +1081,7 @@ private struct ScanOverlay: View {
     private var scanCorner: some View {
         Image(systemName: "viewfinder")
             .font(.title2.weight(.bold))
-            .foregroundStyle(Color.brandPurple)
+            .foregroundStyle(Color.mainAccent)
     }
 }
 
@@ -1108,7 +1108,7 @@ struct PhotoHistoryDayCard: View {
             LazyVGrid(columns: columns, spacing: 14) {
                 ForEach(section.photos) { photo in
                     NavigationLink {
-                        LightReviewSessionView(words: store.words(for: photo), title: photo.title(store.appLanguage))
+                        CapturedWordsSelectionView(photo: photo)
                     } label: {
                         PhotoTile(photo: photo)
                     }

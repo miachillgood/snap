@@ -1,184 +1,370 @@
+import PhotosUI
 import SwiftUI
+import UIKit
 
 struct ProfileView: View {
     @EnvironmentObject private var store: WordStore
+    @AppStorage("reviewReminderEnabled") private var reviewReminderEnabled = false
     @State private var isTestingLevel = false
+    @State private var selectedAvatarItem: PhotosPickerItem?
+    @State private var avatarImage: UIImage?
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                header
-                currentProfileCard
-                quickActions
-                profileUseCard
-                personalizationRules
+            VStack(spacing: 28) {
+                profileHero
+                settingsSection
             }
-            .padding(20)
-            .padding(.bottom, 84)
+            .padding(.horizontal, 24)
+            .padding(.top, 26)
+            .padding(.bottom, 96)
         }
         .background(Color.softBackground)
-        .navigationTitle(store.appLanguage.text(en: "Profile", zh: "我的"))
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.hidden, for: .navigationBar)
         .sheet(isPresented: $isTestingLevel) {
             LevelTestView()
         }
+        .onAppear {
+            avatarImage = AvatarStorage.load()
+        }
+        .onChange(of: selectedAvatarItem) { _, item in
+            loadAvatar(from: item)
+        }
     }
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(store.appLanguage.text(en: "My learning profile", zh: "我的学习档案"))
-                .font(.largeTitle.bold())
-            Text(store.appLanguage.text(en: "Calibrate once, then every photo gets filtered for your level.", zh: "先校准一次水平，之后每张照片都会按你的水平筛词。"))
-                .font(.subheadline)
+    private var profileHero: some View {
+        let profileName = store.currentProfile.name
+        let fallbackInitial = String(profileName.prefix(1))
+        let language = store.appLanguage
+
+        return VStack(spacing: 16) {
+            PhotosPicker(selection: $selectedAvatarItem, matching: .images) {
+                ProfileAvatar(image: avatarImage, fallbackInitial: fallbackInitial)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(store.appLanguage.text(en: "Change profile photo", zh: "更换头像"))
+
+            Text(profileName)
+                .font(.title3.weight(.bold))
+
+            LanguagePill(language: language)
+                .padding(.top, 2)
+
+            Divider()
+                .padding(.top, 14)
+                .padding(.horizontal, 32)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var settingsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(store.appLanguage.text(en: "Settings", zh: "设置"))
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
-        }
-    }
+                .padding(.leading, 8)
 
-    private var currentProfileCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 14) {
-                Text(String(store.currentProfile.name.prefix(1)))
-                    .font(.title.bold())
-                    .foregroundStyle(.white)
-                    .frame(width: 58, height: 58)
-                    .background(Color.brandPurple, in: Circle())
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(store.currentProfile.name)
-                        .font(.title2.bold())
-                    Text(store.currentProfile.role)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+            VStack(spacing: 0) {
+                Button {
+                    isTestingLevel = true
+                } label: {
+                    ProfileSettingsRow(
+                        symbol: "checklist",
+                        title: store.needsCalibration ? store.appLanguage.text(en: "Start Level Check", zh: "开始水平测试") : store.appLanguage.text(en: "Retake Level Check", zh: "重新测试水平"),
+                        value: store.currentProfile.level.title(store.appLanguage),
+                        showsChevron: true
+                    )
                 }
-                Spacer()
-            }
+                .buttonStyle(.plain)
 
-            HStack {
-                ProfileMetric(title: store.appLanguage.text(en: "Level", zh: "水平"), value: store.currentProfile.level.shortTitle(store.appLanguage), symbol: "gauge.with.dots.needle.67percent")
-            }
+                ProfileDivider()
 
-            if let score = store.currentProfile.calibrationScore {
-                Label(store.appLanguage.text(en: "Calibrated with \(score) known words", zh: "已用 \(score) 个已知词校准"), systemImage: "checkmark.seal.fill")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.green)
-            } else {
-                Label(store.appLanguage.text(en: "Needs a 1-minute level check", zh: "需要做 1 分钟水平测试"), systemImage: "exclamationmark.circle.fill")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.orange)
-            }
-        }
-        .padding(18)
-        .background(.background, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-    }
+                NavigationLink {
+                    InterfaceLanguageView()
+                } label: {
+                    ProfileSettingsRow(
+                        symbol: "globe",
+                        title: store.appLanguage.text(en: "Interface Language", zh: "界面语言"),
+                        value: store.appLanguage.nativeTitle,
+                        showsChevron: true
+                    )
+                }
+                .buttonStyle(.plain)
 
-    private var quickActions: some View {
-        VStack(spacing: 12) {
-            Button {
-                isTestingLevel = true
-            } label: {
-                Label(store.needsCalibration ? store.appLanguage.text(en: "Start level check", zh: "开始水平测试") : store.appLanguage.text(en: "Retake level check", zh: "重新测试水平"), systemImage: "checklist")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .tint(.brandPurple)
+                ProfileDivider()
 
-            NavigationLink {
-                ProfileSettingsView()
-            } label: {
-                Label(store.appLanguage.text(en: "Edit level", zh: "编辑水平"), systemImage: "slider.horizontal.3")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
+                ProfileToggleRow(
+                    symbol: "bell.fill",
+                    title: store.appLanguage.text(en: "Daily Review Reminder", zh: "每日复习提醒"),
+                    isOn: $reviewReminderEnabled
+                )
+
+                ProfileDivider()
+
+                NavigationLink {
+                    LearningFocusView()
+                } label: {
+                    ProfileSettingsRow(
+                        symbol: store.currentProfile.goal.icon,
+                        title: store.appLanguage.text(en: "Scene Focus", zh: "学习场景"),
+                        value: store.currentProfile.goal.title(store.appLanguage),
+                        showsChevron: true
+                    )
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.bordered)
-            .controlSize(.large)
+            .background(.background, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
         }
     }
 
-    private var profileUseCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SectionHeader(title: store.appLanguage.text(en: "How your profile is used", zh: "这个档案会怎么用"))
-            ProfileRule(symbol: "camera.viewfinder", text: store.appLanguage.text(en: "New photos are filtered by the photo and your level.", zh: "新照片会按照片内容和你的水平来筛词。"))
-            Divider()
-            ProfileRule(symbol: "eye.slash", text: store.appLanguage.text(en: "Words you mark as too easy stay out of the main review loop.", zh: "你标记为太简单的词，会从主要复习里移开。"))
-            Divider()
-            ProfileRule(symbol: "calendar", text: store.appLanguage.text(en: "Review timing changes as your memory strength changes.", zh: "复习时间会跟着你的记忆强度变化。"))
-        }
-        .padding(16)
-        .background(.background, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-    }
+    private func loadAvatar(from item: PhotosPickerItem?) {
+        guard let item else { return }
 
-    private var personalizationRules: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(store.appLanguage.text(en: "How recommendations work", zh: "推荐是怎么来的"))
-                .font(.headline)
-            Label(store.appLanguage.text(en: "Hide words you have marked as too easy.", zh: "隐藏你已经觉得太简单的词。"), systemImage: "eye.slash")
-            Label(store.appLanguage.text(en: "Keep context words when the meaning changes in a real scene.", zh: "如果词义会随真实场景变化，就保留上下文。"), systemImage: "photo.on.rectangle")
+        Task {
+            guard
+                let data = try? await item.loadTransferable(type: Data.self),
+                let image = UIImage(data: data)
+            else {
+                return
+            }
+
+            let resized = image.resizedAvatar(maxDimension: 420)
+            if let avatarData = resized.jpegData(compressionQuality: 0.84) {
+                AvatarStorage.save(avatarData)
+            }
+
+            await MainActor.run {
+                avatarImage = resized
+                selectedAvatarItem = nil
+            }
         }
-        .font(.subheadline)
-        .padding(16)
-        .background(.background, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 }
 
-private struct ProfileRule: View {
-    let symbol: String
-    let text: String
+private struct ProfileAvatar: View {
+    let image: UIImage?
+    let fallbackInitial: String
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: symbol)
-                .foregroundStyle(Color.brandPurple)
-                .frame(width: 24)
-            Text(text)
-                .font(.subheadline)
-            Spacer(minLength: 0)
+        ZStack(alignment: .bottomTrailing) {
+            Group {
+                if let image {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    Circle()
+                        .fill(Color.mainAccent.opacity(0.82))
+                        .overlay {
+                            Text(fallbackInitial.isEmpty ? "?" : fallbackInitial)
+                                .font(.largeTitle.weight(.bold))
+                                .foregroundStyle(.white)
+                        }
+                }
+            }
+            .frame(width: 112, height: 112)
+            .clipShape(Circle())
+            .overlay {
+                Circle().stroke(.white, lineWidth: 5)
+            }
+            .shadow(color: .black.opacity(0.08), radius: 14, y: 8)
+
+            Image(systemName: "camera.fill")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.white)
+                .frame(width: 30, height: 30)
+                .background(Color.mainAccent, in: Circle())
+                .overlay {
+                    Circle().stroke(.white, lineWidth: 2)
+                }
+                .offset(x: -4, y: -4)
         }
     }
 }
 
-private struct ProfileMetric: View {
+private struct LanguagePill: View {
+    let language: AppLanguage
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "globe")
+                .font(.caption.weight(.bold))
+            Text(language.nativeTitle)
+                .font(.subheadline.weight(.semibold))
+        }
+        .foregroundStyle(.primary)
+        .padding(.horizontal, 22)
+        .padding(.vertical, 11)
+        .background(.background, in: Capsule())
+    }
+}
+
+private struct ProfileSettingsRow: View {
+    let symbol: String
     let title: String
     let value: String
-    let symbol: String
+    let showsChevron: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        HStack(spacing: 14) {
             Image(systemName: symbol)
-                .foregroundStyle(Color.brandPurple)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(.primary)
+                .frame(width: 24)
+
             Text(title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(.subheadline.weight(.semibold))
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.primary)
                 .lineLimit(1)
-                .minimumScaleFactor(0.75)
+                .minimumScaleFactor(0.82)
+
+            Spacer(minLength: 10)
+
+            Text(value)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+
+            if showsChevron {
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(Color.brandPurple.opacity(0.08), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .padding(.horizontal, 18)
+        .padding(.vertical, 17)
+        .contentShape(Rectangle())
     }
 }
 
-private struct ProfileSettingsView: View {
-    @EnvironmentObject private var store: WordStore
-    @State private var level: EnglishLevel = .everyday
+private struct ProfileToggleRow: View {
+    let symbol: String
+    let title: String
+    @Binding var isOn: Bool
 
     var body: some View {
-        Form {
-            Picker(store.appLanguage.text(en: "English level", zh: "英语水平"), selection: $level) {
-                ForEach(EnglishLevel.allCases) { level in
-                    Text(level.title(store.appLanguage)).tag(level)
+        HStack(spacing: 14) {
+            Image(systemName: symbol)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(.primary)
+                .frame(width: 24)
+
+            Text(title)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.82)
+
+            Spacer()
+
+            Toggle("", isOn: $isOn)
+                .labelsHidden()
+                .tint(.mainWarning)
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 12)
+    }
+}
+
+private struct ProfileDivider: View {
+    var body: some View {
+        Divider()
+            .padding(.leading, 56)
+    }
+}
+
+private struct InterfaceLanguageView: View {
+    @EnvironmentObject private var store: WordStore
+
+    var body: some View {
+        List {
+            ForEach(AppLanguage.allCases) { language in
+                Button {
+                    store.appLanguage = language
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "globe")
+                            .foregroundStyle(Color.mainAccent)
+                            .frame(width: 24)
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(language.nativeTitle)
+                                .font(.headline)
+                            Text(language.description(store.appLanguage))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Spacer()
+
+                        if store.appLanguage == language {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(Color.mainAction)
+                        }
+                    }
                 }
+                .buttonStyle(.plain)
             }
         }
-        .navigationTitle(store.appLanguage.text(en: "Learning profile", zh: "学习档案"))
+        .navigationTitle(store.appLanguage.text(en: "Interface Language", zh: "界面语言"))
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear {
-            level = store.currentProfile.level
+    }
+}
+
+private struct LearningFocusView: View {
+    @EnvironmentObject private var store: WordStore
+
+    var body: some View {
+        List {
+            ForEach(LearningGoal.allCases) { goal in
+                Button {
+                    store.updateCurrentProfile(
+                        level: store.currentProfile.level,
+                        goal: goal,
+                        calibrationScore: store.currentProfile.calibrationScore
+                    )
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: goal.icon)
+                            .foregroundStyle(goal == store.currentProfile.goal ? Color.mainAccent : .secondary)
+                            .frame(width: 24)
+
+                        Text(goal.title(store.appLanguage))
+                            .font(.headline)
+                            .foregroundStyle(.primary)
+
+                        Spacer()
+
+                        if goal == store.currentProfile.goal {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(Color.mainAction)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+            }
         }
-        .onChange(of: level) { _, newValue in
-            store.updateCurrentProfile(level: newValue, goal: store.currentProfile.goal, calibrationScore: store.currentProfile.calibrationScore)
+        .navigationTitle(store.appLanguage.text(en: "Scene Focus", zh: "学习场景"))
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+private struct AvatarStorage {
+    private static let key = "profileAvatarImageData"
+
+    static func load() -> UIImage? {
+        guard let data = UserDefaults.standard.data(forKey: key) else {
+            return nil
         }
+
+        return UIImage(data: data)
+    }
+
+    static func save(_ data: Data) {
+        UserDefaults.standard.set(data, forKey: key)
     }
 }
 
@@ -209,7 +395,7 @@ private struct LevelTestView: View {
                                 }
                                 Spacer()
                                 Image(systemName: knownWords.contains(word) ? "eye.slash.fill" : "circle")
-                                    .foregroundStyle(knownWords.contains(word) ? Color.brandPurple : .secondary)
+                                    .foregroundStyle(knownWords.contains(word) ? Color.mainAccent : .secondary)
                             }
                         }
                     }
@@ -241,5 +427,20 @@ private struct LevelTestView: View {
         if score <= 5 { return .everyday }
         if score <= 8 { return .working }
         return .confident
+    }
+}
+
+private extension UIImage {
+    func resizedAvatar(maxDimension: CGFloat) -> UIImage {
+        let longestSide = max(size.width, size.height)
+        guard longestSide > maxDimension else { return self }
+
+        let scale = maxDimension / longestSide
+        let newSize = CGSize(width: size.width * scale, height: size.height * scale)
+        let renderer = UIGraphicsImageRenderer(size: newSize)
+
+        return renderer.image { _ in
+            draw(in: CGRect(origin: .zero, size: newSize))
+        }
     }
 }

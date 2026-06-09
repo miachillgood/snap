@@ -20,7 +20,11 @@ struct RootView: View {
         Group {
 #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("-previewOnboardingLevel")
-                || ProcessInfo.processInfo.arguments.contains("-previewOnboardingTransit") {
+                || ProcessInfo.processInfo.arguments.contains("-previewOnboardingTransit")
+                || ProcessInfo.processInfo.arguments.contains("-previewOnboardingShopping")
+                || ProcessInfo.processInfo.arguments.contains("-previewOnboardingHousing")
+                || ProcessInfo.processInfo.arguments.contains("-previewOnboardingMedical")
+                || ProcessInfo.processInfo.arguments.contains("-previewOnboardingResult") {
                 OnboardingView(startsAtLogin: false)
             } else if !store.isSignedIn {
                 OnboardingView(startsAtLogin: true)
@@ -71,7 +75,7 @@ struct RootView: View {
                 Label(store.appLanguage.text(en: "Profile", zh: "我的"), systemImage: "person.crop.circle")
             }
         }
-        .tint(.brandPurple)
+        .tint(.mainAccent)
         .sheet(isPresented: $isShowingSettings) {
             AppSettingsView()
         }

@@ -22,11 +22,11 @@ enum WordCategory: String, CaseIterable, Identifiable, Codable {
 
     var color: Color {
         switch self {
-        case .food: .green
-        case .transport: .blue
-        case .medical: .purple
-        case .dailyLife: .orange
-        case .work: .indigo
+        case .food: .mainAction
+        case .transport: .mainAccent
+        case .medical: .mainPink
+        case .dailyLife: .mainWarning
+        case .work: .mainCoral
         }
     }
 }
@@ -56,9 +56,9 @@ enum WordGroup: String, CaseIterable, Identifiable {
 
     var color: Color {
         switch self {
-        case .recommended: .brandPurple
-        case .phrases: .orange
-        case .hidden: .green
+        case .recommended: .mainAccent
+        case .phrases: .mainWarning
+        case .hidden: .mainAction
         }
     }
 }
@@ -91,10 +91,10 @@ enum ReviewRating: String, CaseIterable, Identifiable {
 
     var color: Color {
         switch self {
-        case .forgot: .red
-        case .unsure: .orange
-        case .remembered: .brandPurple
-        case .easy: .green
+        case .forgot: .mainCoral
+        case .unsure: .mainWarning
+        case .remembered: .mainAccent
+        case .easy: .mainAction
         }
     }
 
@@ -109,8 +109,8 @@ enum ReviewRating: String, CaseIterable, Identifiable {
 }
 
 enum ReviewHomeMode: String, CaseIterable, Identifiable {
-    case date
     case category
+    case date
 
     var id: String { rawValue }
 }
@@ -169,6 +169,16 @@ enum EnglishLevel: String, CaseIterable, Identifiable {
         case .confident: "Confident"
         }
     }
+
+    static func inferred(fromKnownCount knownCount: Int, totalWordCount: Int) -> EnglishLevel {
+        guard totalWordCount > 0 else { return .gettingStarted }
+
+        let ratio = Double(knownCount) / Double(totalWordCount)
+        if ratio <= 0.2 { return .gettingStarted }
+        if ratio <= 0.5 { return .everyday }
+        if ratio <= 0.75 { return .working }
+        return .confident
+    }
 }
 
 enum LearningGoal: String, CaseIterable, Identifiable {
@@ -198,9 +208,42 @@ struct UserProfile: Identifiable, Hashable {
     var level: EnglishLevel
     var goal: LearningGoal
     var calibrationScore: Int?
+    var calibratedAt: Date? = nil
+    var sceneCalibrationScores: [WordCategory: Int] = [:]
     var hidesKnownWords = true
     var keepsSceneContext = true
     var confirmsBeforeReview = true
+}
+
+struct CalibrationScene: Identifiable {
+    let id: String
+    let sceneNumber: String
+    let title: String
+    let subtitle: String
+    let category: WordCategory
+    let icon: String
+    let highlightColor: Color
+    let backgroundColor: Color
+    let imageName: String?
+    let words: [LevelProbeWord]
+
+    var wordCount: Int { words.count }
+}
+
+struct CalibrationResult: Hashable {
+    let totalKnownCount: Int
+    let totalWordCount: Int
+    let inferredLevel: EnglishLevel
+    let sceneScores: [WordCategory: Int]
+    let testedAt: Date
+
+    init(totalKnownCount: Int, totalWordCount: Int, sceneScores: [WordCategory: Int], testedAt: Date = Date()) {
+        self.totalKnownCount = totalKnownCount
+        self.totalWordCount = totalWordCount
+        self.sceneScores = sceneScores
+        self.testedAt = testedAt
+        self.inferredLevel = EnglishLevel.inferred(fromKnownCount: totalKnownCount, totalWordCount: totalWordCount)
+    }
 }
 
 struct LevelProbeWord: Identifiable, Hashable {
@@ -235,6 +278,11 @@ struct VocabularyWord: Identifiable, Hashable {
     var nextReview: String
     var sourcePhotoID: UUID? = nil
     var encounteredAt: Date = Date()
+}
+
+struct WordLearningState: Codable, Hashable {
+    var isSelected: Bool
+    var isKnown: Bool
 }
 
 struct ScenePhoto: Identifiable, Codable, Hashable {
@@ -363,9 +411,9 @@ enum PackVisibility: String, CaseIterable, Identifiable {
 
     var color: Color {
         switch self {
-        case .privatePack: .brandPurple
-        case .unlisted: .orange
-        case .publicPack: .green
+        case .privatePack: .mainAccent
+        case .unlisted: .mainWarning
+        case .publicPack: .mainAction
         }
     }
 }
@@ -453,7 +501,11 @@ struct SignedInUser: Identifiable, Equatable {
 
 @MainActor
 final class WordStore: ObservableObject {
-    @Published var scannedWords = SampleData.scannedWords
+    @Published var scannedWords = WordStore.loadWordStates(defaultWords: SampleData.scannedWords) {
+        didSet {
+            WordStore.saveWordStates(scannedWords)
+        }
+    }
     @Published var selectedCategory: WordCategory = .food
     @Published var selectedScene = "Cafe menu"
     @Published var reviewIndex = 0
@@ -589,6 +641,25 @@ final class WordStore: ObservableObject {
         resetReviewSession()
     }
 
+    func saveConfirmedWords(kept: [VocabularyWord], removed: [VocabularyWord]) -> [VocabularyWord] {
+        let keptKeys = Set(kept.map(\.storageKey))
+        let removedKeys = Set(removed.map(\.storageKey))
+
+        for index in scannedWords.indices {
+            let key = scannedWords[index].storageKey
+            if keptKeys.contains(key) {
+                scannedWords[index].isSelected = true
+                scannedWords[index].isKnown = false
+            } else if removedKeys.contains(key) {
+                scannedWords[index].isSelected = false
+                scannedWords[index].isKnown = true
+            }
+        }
+
+        resetReviewSession()
+        return scannedWords.filter { keptKeys.contains($0.storageKey) }
+    }
+
     func markKnown(_ word: VocabularyWord) {
         guard let index = scannedWords.firstIndex(where: { $0.id == word.id }) else { return }
         scannedWords[index].isSelected = false
@@ -631,10 +702,30 @@ final class WordStore: ObservableObject {
         reviewEvents.append(ReviewEvent(wordID: word.id, outcome: outcome))
     }
 
-    func updateCurrentProfile(level: EnglishLevel, goal: LearningGoal, calibrationScore: Int?) {
+    func updateCurrentProfile(
+        level: EnglishLevel,
+        goal: LearningGoal,
+        calibrationScore: Int?,
+        calibratedAt: Date? = nil,
+        sceneCalibrationScores: [WordCategory: Int]? = nil
+    ) {
         userProfile.level = level
         userProfile.goal = goal
         userProfile.calibrationScore = calibrationScore
+        userProfile.calibratedAt = calibratedAt
+        if let sceneCalibrationScores {
+            userProfile.sceneCalibrationScores = sceneCalibrationScores
+        }
+    }
+
+    func applyCalibrationResult(_ result: CalibrationResult) {
+        updateCurrentProfile(
+            level: result.inferredLevel,
+            goal: .realLife,
+            calibrationScore: result.totalKnownCount,
+            calibratedAt: result.testedAt,
+            sceneCalibrationScores: result.sceneScores
+        )
     }
 
     func signIn(provider: SignInProvider, email: String? = nil) {
@@ -667,6 +758,8 @@ final class WordStore: ObservableObject {
         level: EnglishLevel,
         goal: LearningGoal,
         calibrationScore: Int,
+        calibratedAt: Date? = nil,
+        sceneCalibrationScores: [WordCategory: Int] = [:],
         hidesKnownWords: Bool = true,
         keepsSceneContext: Bool = true,
         confirmsBeforeReview: Bool = true
@@ -677,6 +770,8 @@ final class WordStore: ObservableObject {
         userProfile.level = level
         userProfile.goal = goal
         userProfile.calibrationScore = calibrationScore
+        userProfile.calibratedAt = calibratedAt
+        userProfile.sceneCalibrationScores = sceneCalibrationScores
         userProfile.hidesKnownWords = hidesKnownWords
         userProfile.keepsSceneContext = keepsSceneContext
         userProfile.confirmsBeforeReview = confirmsBeforeReview
@@ -706,7 +801,8 @@ final class WordStore: ObservableObject {
         resetReviewSession()
     }
 
-    func addPhoto(_ image: UIImage, source: PhotoCaptureSource) {
+    @discardableResult
+    func addPhoto(_ image: UIImage, source: PhotoCaptureSource) -> ScenePhoto {
         let filename = "\(UUID().uuidString).jpg"
         let storedFilename = saveImage(image, filename: filename) ? filename : nil
         let visibleWords = scannedWords.filter { $0.group != .hidden }
@@ -723,6 +819,7 @@ final class WordStore: ObservableObject {
         photos.insert(photo, at: 0)
         savePhotoHistory()
         usePhoto(photo)
+        return photo
     }
 
     func photoImage(for photo: ScenePhoto) -> UIImage? {
@@ -1094,6 +1191,49 @@ final class WordStore: ObservableObject {
             // Heatmap history should never block the review flow.
         }
     }
+
+    private static func loadWordStates(defaultWords: [VocabularyWord]) -> [VocabularyWord] {
+        let defaults = UserDefaults.standard
+        guard let data = defaults.data(forKey: "wordLearningStates") else {
+            return defaultWords
+        }
+
+        do {
+            let states = try JSONDecoder().decode([String: WordLearningState].self, from: data)
+            return defaultWords.map { word in
+                guard let state = states[word.storageKey] else { return word }
+                var updatedWord = word
+                updatedWord.isSelected = state.isSelected
+                updatedWord.isKnown = state.isKnown
+                return updatedWord
+            }
+        } catch {
+            return defaultWords
+        }
+    }
+
+    private static func saveWordStates(_ words: [VocabularyWord]) {
+        let states = Dictionary(uniqueKeysWithValues: words.map {
+            ($0.storageKey, WordLearningState(isSelected: $0.isSelected, isKnown: $0.isKnown))
+        })
+
+        do {
+            let data = try JSONEncoder().encode(states)
+            UserDefaults.standard.set(data, forKey: "wordLearningStates")
+        } catch {
+            // Word selection should keep working even if persistence fails.
+        }
+    }
+}
+
+extension VocabularyWord {
+    var storageKey: String {
+        [
+            text.normalizedStorageKeyComponent,
+            sourceScene.normalizedStorageKeyComponent,
+            category.rawValue.normalizedStorageKeyComponent
+        ].joined(separator: "|")
+    }
 }
 
 private extension UIImage {
@@ -1115,10 +1255,32 @@ private extension String {
     var nonEmpty: String? {
         isEmpty ? nil : self
     }
+
+    var normalizedStorageKeyComponent: String {
+        lowercased()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "\\s+", with: "-", options: .regularExpression)
+    }
 }
 
 extension Color {
+    static let paletteCream = Color(red: 0.976, green: 0.847, blue: 0.651)
+    static let palettePink = Color(red: 0.965, green: 0.757, blue: 0.855)
+    static let paletteYellow = Color(red: 0.973, green: 0.867, blue: 0.475)
+    static let paletteLilac = Color(red: 0.8, green: 0.71, blue: 0.98)
+    static let paletteCoral = Color(red: 1.0, green: 0.776, blue: 0.78)
+    static let paletteGray = Color(red: 0.796, green: 0.796, blue: 0.796)
+    static let paletteSage = Color(red: 0.525, green: 0.667, blue: 0.514)
+
+    static let mainBackground = Color(red: 0.992, green: 0.965, blue: 0.902)
+    static let mainAccent = Color(red: 0.49, green: 0.38, blue: 0.84)
+    static let mainAction = Color(red: 0.36, green: 0.52, blue: 0.35)
+    static let mainWarning = Color(red: 0.72, green: 0.55, blue: 0.14)
+    static let mainPink = Color(red: 0.76, green: 0.42, blue: 0.58)
+    static let mainCoral = Color(red: 0.76, green: 0.42, blue: 0.44)
+    static let mainNeutral = Color(red: 0.45, green: 0.45, blue: 0.45)
+
     static let brandPurple = Color(red: 0.43, green: 0.31, blue: 0.92)
-    static let brandYellow = Color(red: 1.0, green: 0.83, blue: 0.32)
-    static let softBackground = Color(uiColor: .systemGroupedBackground)
+    static let brandYellow = Color.paletteYellow
+    static let softBackground = Color.mainBackground
 }
