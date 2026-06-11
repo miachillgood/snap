@@ -18,11 +18,7 @@ struct PacksView: View {
             VStack(alignment: .leading, spacing: 18) {
                 header
                 searchField
-                filterPicker
-
-                if selectedFilter == .mine {
-                    createPackCard
-                }
+                feedHeader
 
                 if visiblePackCount == 0 {
                     emptyState
@@ -47,12 +43,36 @@ struct PacksView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(store.appLanguage.text(en: "Real scenes. Real words.", zh: "真实场景，真实单词。"))
-                .font(.largeTitle.bold())
-            Text(store.appLanguage.text(en: "Find public word packs by scene, keyword, place, or the words inside.", zh: "按场景、关键词、地点或词包里的单词找到别人公开的词包。"))
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+        HStack(alignment: .top, spacing: 16) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(store.appLanguage.text(en: "Packs", zh: "词包"))
+                    .font(.largeTitle.bold())
+                Text(store.appLanguage.text(en: "Find real-scene word sets.", zh: "发现真实场景里的单词组。"))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 12)
+
+            Button {
+                withAnimation(.snappy(duration: 0.22)) {
+                    selectedFilter = selectedFilter == .mine ? .discover : .mine
+                }
+            } label: {
+                Label(
+                    selectedFilter == .mine
+                        ? store.appLanguage.text(en: "Discover", zh: "发现")
+                        : store.appLanguage.text(en: "My packs", zh: "我的"),
+                    systemImage: selectedFilter == .mine ? "sparkles" : "folder"
+                )
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Color.mainAccent)
+                .lineLimit(1)
+                .padding(.horizontal, 11)
+                .padding(.vertical, 8)
+                .background(Color.mainAccent.opacity(0.1), in: Capsule())
+            }
+            .buttonStyle(.plain)
         }
     }
 
@@ -60,7 +80,7 @@ struct PacksView: View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
-            TextField(store.appLanguage.text(en: "Search cafe, NZ, surcharge, barista", zh: "搜索 cafe、NZ、surcharge、barista"), text: $searchText)
+            TextField(store.appLanguage.text(en: "Search packs", zh: "搜索词包"), text: $searchText)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
             if !searchText.isEmpty {
@@ -78,42 +98,41 @@ struct PacksView: View {
         .background(.background, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
-    private var filterPicker: some View {
-        Picker(store.appLanguage.text(en: "Pack filter", zh: "词包筛选"), selection: $selectedFilter) {
-            ForEach(PackFilter.allCases) { filter in
-                Text(filter.title(store.appLanguage)).tag(filter)
-            }
-        }
-        .pickerStyle(.segmented)
-    }
-
-    private var createPackCard: some View {
-        Button {
-            isShowingPackCreator = true
-        } label: {
-            HStack(spacing: 14) {
-                Image(systemName: "plus")
-                    .font(.headline.weight(.bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 48, height: 48)
-                    .background(Color.mainAction, in: Circle())
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(store.appLanguage.text(en: "Create a pack from selected words", zh: "用已选单词创建词包"))
-                        .font(.headline)
-                    Text(store.appLanguage.text(en: "Name it, describe who it helps, then choose private, link-only, or public.", zh: "命名它，写清楚帮谁学，再选择私密、仅链接或公开。"))
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.bold))
+    private var feedHeader: some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(selectedFilter.title(store.appLanguage))
+                    .font(.headline)
+                Text(feedSubtitle)
+                    .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Spacer()
+
+            if selectedFilter == .mine {
+                Button {
+                    isShowingPackCreator = true
+                } label: {
+                    Label(store.appLanguage.text(en: "Create", zh: "新建"), systemImage: "plus")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Color.mainAction)
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 8)
+                        .background(Color.mainAction.opacity(0.1), in: Capsule())
+                }
+                .buttonStyle(.plain)
+            }
         }
-        .buttonStyle(.plain)
-        .padding(16)
-        .background(Color.mainAction.opacity(0.12), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
+
+    private var feedSubtitle: String {
+        switch selectedFilter {
+        case .discover:
+            store.appLanguage.text(en: "Public packs from real scenes", zh: "来自真实场景的公开词包")
+        case .mine:
+            store.appLanguage.text(en: "Create and manage your own packs", zh: "创建和管理自己的词包")
+        }
     }
 
     private var emptyState: some View {
@@ -123,7 +142,7 @@ struct PacksView: View {
                 .foregroundStyle(Color.mainAccent)
             Text(store.appLanguage.text(en: "No packs found", zh: "没有找到词包"))
                 .font(.headline)
-            Text(store.appLanguage.text(en: "Try another keyword or switch filters.", zh: "换一个关键词，或者切换筛选。"))
+            Text(store.appLanguage.text(en: "Try another keyword or clear the current view.", zh: "换一个关键词，或者清空当前筛选。"))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -241,7 +260,7 @@ private struct PackCard: View {
                     store.startLearning(pack)
                     isLearning = true
                 } label: {
-                    Label(store.appLanguage.text(en: "Start learning", zh: "开始学习"), systemImage: "arrow.right")
+                    Label(primaryActionTitle, systemImage: "arrow.right")
                         .font(.headline)
                         .frame(maxWidth: .infinity)
                 }
@@ -277,6 +296,18 @@ private struct PackCard: View {
                 pack.visibility = newVisibility
             }
         }
+    }
+
+    private var primaryActionTitle: String {
+        if pack.isAddedToReview {
+            return store.appLanguage.text(en: "Review now", zh: "现在复习")
+        }
+
+        if isOwnPack {
+            return store.appLanguage.text(en: "Start learning", zh: "开始学习")
+        }
+
+        return store.appLanguage.text(en: "Add to Review", zh: "加入复习")
     }
 }
 
@@ -391,7 +422,6 @@ private struct FlowWordsPreview: View {
 
 private enum PackFilter: String, CaseIterable, Identifiable {
     case discover
-    case following
     case mine
 
     var id: String { rawValue }
@@ -399,7 +429,6 @@ private enum PackFilter: String, CaseIterable, Identifiable {
     func title(_ language: AppLanguage) -> String {
         switch self {
         case .discover: language.text(en: "Discover", zh: "发现")
-        case .following: language.text(en: "Following", zh: "关注")
         case .mine: language.text(en: "My packs", zh: "我的词包")
         }
     }
@@ -408,8 +437,6 @@ private enum PackFilter: String, CaseIterable, Identifiable {
         switch self {
         case .discover:
             pack.isDiscoverable
-        case .following:
-            pack.owner != currentUserName && pack.isDiscoverable
         case .mine:
             pack.owner == currentUserName
         }

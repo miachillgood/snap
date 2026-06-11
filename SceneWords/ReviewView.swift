@@ -11,15 +11,7 @@ struct ReviewView: View {
             VStack(alignment: .leading, spacing: 18) {
                 reviewHeader
                 ReviewHeatmapCard(range: $heatmapRange, pageOffset: $heatmapPageOffset)
-
-                Picker(store.appLanguage.text(en: "Review view", zh: "复习方式"), selection: $selectedMode) {
-                    ForEach(ReviewHomeMode.allCases) { mode in
-                        Text(mode.title(store.appLanguage)).tag(mode)
-                    }
-                }
-                .pickerStyle(.segmented)
-
-                selectedContent
+                reviewRouteSection
             }
             .padding(20)
             .padding(.bottom, 84)
@@ -34,9 +26,6 @@ struct ReviewView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text(store.appLanguage.text(en: "Review what you actually saw", zh: "复习你真实遇见过的词"))
                     .font(.title2.bold())
-                Text(store.appLanguage.text(en: "Pick a day before going back to that place, or focus on one scene.", zh: "可以按某一天复习，也可以只复习一个场景。"))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
             }
 
             HStack(spacing: 10) {
@@ -64,6 +53,44 @@ struct ReviewView: View {
         .background(.background, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 
+    private var reviewRouteSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 10) {
+                ReviewModeChoiceCard(
+                    mode: .date,
+                    count: store.reviewDaySections.count,
+                    isSelected: selectedMode == .date
+                ) {
+                    withAnimation(.snappy(duration: 0.22)) {
+                        selectedMode = .date
+                    }
+                }
+
+                ReviewModeChoiceCard(
+                    mode: .category,
+                    count: store.categoryReviewSections.count,
+                    isSelected: selectedMode == .category
+                ) {
+                    withAnimation(.snappy(duration: 0.22)) {
+                        selectedMode = .category
+                    }
+                }
+
+                ReviewModeChoiceCard(
+                    mode: .pack,
+                    count: store.reviewPacks.count,
+                    isSelected: selectedMode == .pack
+                ) {
+                    withAnimation(.snappy(duration: 0.22)) {
+                        selectedMode = .pack
+                    }
+                }
+            }
+
+            selectedContent
+        }
+    }
+
     @ViewBuilder
     private var selectedContent: some View {
         switch selectedMode {
@@ -71,6 +98,8 @@ struct ReviewView: View {
             ReviewByDateSection()
         case .category:
             ReviewByCategorySection()
+        case .pack:
+            ReviewByPackSection()
         }
     }
 }
@@ -194,13 +223,116 @@ struct LightReviewSessionView: View {
     }
 }
 
+private struct ReviewModeChoiceCard: View {
+    @EnvironmentObject private var store: WordStore
+    let mode: ReviewHomeMode
+    let count: Int
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .top) {
+                    Image(systemName: symbol)
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(isSelected ? .white : color)
+                        .frame(width: 34, height: 34)
+                        .background(isSelected ? color : color.opacity(0.12), in: Circle())
+
+                    Spacer(minLength: 8)
+
+                    if isSelected {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(color)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(mode.title(store.appLanguage))
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+
+                    Text(subtitle)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.82)
+                }
+
+                Text(countTitle)
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(color)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .background(color.opacity(0.1), in: Capsule())
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(13)
+            .background(cardBackground, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(isSelected ? color.opacity(0.52) : Color.primary.opacity(0.06), lineWidth: 1.2)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(accessibilityTitle)
+    }
+
+    private var symbol: String {
+        switch mode {
+        case .date: "calendar.badge.clock"
+        case .category: "square.stack.3d.up.fill"
+        case .pack: "book.closed.fill"
+        }
+    }
+
+    private var color: Color {
+        switch mode {
+        case .date: .mainWarning
+        case .category: .mainAccent
+        case .pack: .mainAction
+        }
+    }
+
+    private var subtitle: String {
+        switch mode {
+        case .date:
+            store.appLanguage.text(en: "Before you return", zh: "回去前刷")
+        case .category:
+            store.appLanguage.text(en: "Stay in one scene", zh: "只练一个场景")
+        case .pack:
+            store.appLanguage.text(en: "Packs you chose", zh: "你选过的词包")
+        }
+    }
+
+    private var countTitle: String {
+        switch mode {
+        case .date:
+            store.appLanguage.text(en: "\(count) days", zh: "\(count) 天")
+        case .category:
+            store.appLanguage.text(en: "\(count) scenes", zh: "\(count) 个场景")
+        case .pack:
+            store.appLanguage.text(en: "\(count) packs", zh: "\(count) 个词包")
+        }
+    }
+
+    private var accessibilityTitle: String {
+        "\(mode.title(store.appLanguage)), \(subtitle), \(countTitle)"
+    }
+
+    private var cardBackground: Color {
+        isSelected ? color.opacity(0.12) : Color.primary.opacity(0.035)
+    }
+}
+
 private struct ReviewByDateSection: View {
     @EnvironmentObject private var store: WordStore
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            SectionHeader(title: store.appLanguage.text(en: "Review by captured day", zh: "按拍摄日期复习"))
-
             if store.reviewDaySections.isEmpty {
                 ReviewEmptyState(
                     symbol: "calendar.badge.exclamationmark",
@@ -232,8 +364,6 @@ private struct ReviewByCategorySection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            SectionHeader(title: store.appLanguage.text(en: "Review by scene", zh: "按场景复习"))
-
             if store.categoryReviewSections.isEmpty {
                 ReviewEmptyState(
                     symbol: "square.stack.3d.up.slash",
@@ -245,6 +375,30 @@ private struct ReviewByCategorySection: View {
                         LightReviewSessionView(words: section.words, title: section.category.title(store.appLanguage))
                     } label: {
                         ReviewCategoryRow(section: section)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+}
+
+private struct ReviewByPackSection: View {
+    @EnvironmentObject private var store: WordStore
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if store.reviewPacks.isEmpty {
+                ReviewEmptyState(
+                    symbol: "book.closed",
+                    text: store.appLanguage.text(en: "Add a pack from Packs, then it will appear here for review.", zh: "从词包页加入一个词包后，它会出现在这里复习。")
+                )
+            } else {
+                ForEach(store.reviewPacks) { pack in
+                    NavigationLink {
+                        LightReviewSessionView(words: store.reviewWords(for: pack), title: pack.title)
+                    } label: {
+                        ReviewPackRow(pack: pack)
                     }
                     .buttonStyle(.plain)
                 }
@@ -319,6 +473,51 @@ private struct ReviewDayRow: View {
         }
 
         return scenes.prefix(2).joined(separator: " · ")
+    }
+}
+
+private struct ReviewPackRow: View {
+    @EnvironmentObject private var store: WordStore
+    let pack: SharedPack
+
+    var body: some View {
+        HStack(spacing: 14) {
+            PackAvatar(initial: pack.ownerAvatarInitial, color: pack.category.color)
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(pack.title)
+                        .font(.headline)
+                        .lineLimit(1)
+                    Spacer()
+                    Text(store.appLanguage.text(en: "\(pack.wordCount) words", zh: "\(pack.wordCount) 个词"))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+
+                Text(store.appLanguage.text(en: "by \(pack.owner) · \(pack.location)", zh: "\(pack.owner) 创建 · \(pack.location)"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(pack.words.prefix(4), id: \.self) { word in
+                            WordChip(text: word, color: pack.category.color)
+                        }
+                        if pack.words.count > 4 {
+                            WordChip(text: "+\(pack.words.count - 4)", color: .gray)
+                        }
+                    }
+                }
+            }
+
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.secondary)
+        }
+        .padding(16)
+        .background(.background, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 }
 
@@ -825,6 +1024,7 @@ private extension ReviewHomeMode {
         switch self {
         case .date: language.text(en: "By date", zh: "按日期")
         case .category: language.text(en: "By scene", zh: "按场景")
+        case .pack: language.text(en: "By pack", zh: "按词包")
         }
     }
 }

@@ -1,5 +1,7 @@
-import SwiftUI
 import UIKit
+import Vision
+import ImageIO
+import SwiftUI
 
 enum WordCategory: String, CaseIterable, Identifiable, Codable {
     case food = "Food"
@@ -31,7 +33,7 @@ enum WordCategory: String, CaseIterable, Identifiable, Codable {
     }
 }
 
-enum WordGroup: String, CaseIterable, Identifiable {
+enum WordGroup: String, CaseIterable, Identifiable, Codable {
     case recommended = "Recommended"
     case phrases = "Scene phrases"
     case hidden = "Hidden simple words"
@@ -60,6 +62,75 @@ enum WordGroup: String, CaseIterable, Identifiable {
         case .phrases: .mainWarning
         case .hidden: .mainAction
         }
+    }
+}
+
+struct RecognizedTextLine: Identifiable {
+    let id = UUID()
+    let text: String
+    let confidence: Float
+    let boundingBox: CGRect
+}
+
+struct SceneClassification: Hashable {
+    let sceneTitle: String
+    let category: WordCategory
+    let confidence: Double
+}
+
+struct RecognizedWordCandidate: Identifiable, Hashable {
+    let id = UUID()
+    let text: String
+    let normalizedText: String
+    let meaning: String?
+    let note: String
+    let contextLine: String
+    let nextUse: String
+    let category: WordCategory
+    let sourceScene: String
+    let confidence: Float
+    let sourcePhotoID: UUID
+    let encounteredAt: Date
+    let isKnownLexiconWord: Bool
+    let group: WordGroup
+
+    func vocabularyWord() -> VocabularyWord {
+        VocabularyWord(
+            text: text,
+            meaning: meaning?.nonEmpty ?? VocabularyWord.pendingMeaning,
+            note: note,
+            sourceScene: sourceScene,
+            contextLine: contextLine,
+            nextUse: nextUse,
+            category: category,
+            group: group,
+            isSelected: false,
+            isKnown: false,
+            memoryStrength: isKnownLexiconWord ? 2 : 1,
+            reviewCount: 0,
+            nextReview: "today",
+            sourcePhotoID: sourcePhotoID,
+            encounteredAt: encounteredAt,
+            isUserGenerated: !isKnownLexiconWord
+        )
+    }
+
+    func reclassified(category: WordCategory, sourceScene: String) -> RecognizedWordCandidate {
+        RecognizedWordCandidate(
+            text: text,
+            normalizedText: normalizedText,
+            meaning: meaning,
+            note: note,
+            contextLine: contextLine,
+            nextUse: nextUse,
+            category: category,
+            sourceScene: sourceScene,
+            confidence: confidence,
+            sourcePhotoID: sourcePhotoID,
+            encounteredAt: encounteredAt,
+            isKnownLexiconWord: isKnownLexiconWord,
+            group: group
+        )
     }
 }
 
@@ -111,6 +182,7 @@ enum ReviewRating: String, CaseIterable, Identifiable {
 enum ReviewHomeMode: String, CaseIterable, Identifiable {
     case category
     case date
+    case pack
 
     var id: String { rawValue }
 }
@@ -174,9 +246,9 @@ enum EnglishLevel: String, CaseIterable, Identifiable {
         guard totalWordCount > 0 else { return .gettingStarted }
 
         let ratio = Double(knownCount) / Double(totalWordCount)
-        if ratio <= 0.2 { return .gettingStarted }
-        if ratio <= 0.5 { return .everyday }
-        if ratio <= 0.75 { return .working }
+        if ratio < 0.3 { return .gettingStarted }
+        if ratio < 0.75 { return .everyday }
+        if ratio < 0.9 { return .working }
         return .confident
     }
 }
@@ -262,6 +334,8 @@ struct LevelProbeWord: Identifiable, Hashable {
 }
 
 struct VocabularyWord: Identifiable, Hashable {
+    static let pendingMeaning = "待补充释义"
+
     let id = UUID()
     let text: String
     let meaning: String
@@ -278,11 +352,69 @@ struct VocabularyWord: Identifiable, Hashable {
     var nextReview: String
     var sourcePhotoID: UUID? = nil
     var encounteredAt: Date = Date()
+    var isUserGenerated = false
 }
 
 struct WordLearningState: Codable, Hashable {
     var isSelected: Bool
     var isKnown: Bool
+}
+
+struct StoredVocabularyWord: Codable, Hashable {
+    let text: String
+    let meaning: String
+    let note: String
+    let sourceScene: String
+    let contextLine: String
+    let nextUse: String
+    let category: WordCategory
+    let group: WordGroup
+    let isSelected: Bool
+    let isKnown: Bool
+    let memoryStrength: Int
+    let reviewCount: Int
+    let nextReview: String
+    let sourcePhotoID: UUID?
+    let encounteredAt: Date
+
+    init(word: VocabularyWord) {
+        text = word.text
+        meaning = word.meaning
+        note = word.note
+        sourceScene = word.sourceScene
+        contextLine = word.contextLine
+        nextUse = word.nextUse
+        category = word.category
+        group = word.group
+        isSelected = word.isSelected
+        isKnown = word.isKnown
+        memoryStrength = word.memoryStrength
+        reviewCount = word.reviewCount
+        nextReview = word.nextReview
+        sourcePhotoID = word.sourcePhotoID
+        encounteredAt = word.encounteredAt
+    }
+
+    func vocabularyWord() -> VocabularyWord {
+        VocabularyWord(
+            text: text,
+            meaning: meaning,
+            note: note,
+            sourceScene: sourceScene,
+            contextLine: contextLine,
+            nextUse: nextUse,
+            category: category,
+            group: group,
+            isSelected: isSelected,
+            isKnown: isKnown,
+            memoryStrength: memoryStrength,
+            reviewCount: reviewCount,
+            nextReview: nextReview,
+            sourcePhotoID: sourcePhotoID,
+            encounteredAt: encounteredAt,
+            isUserGenerated: true
+        )
+    }
 }
 
 struct ScenePhoto: Identifiable, Codable, Hashable {
@@ -433,6 +565,7 @@ struct SharedPack: Identifiable {
     var sourceScenes: [String]
     var visibility: PackVisibility
     var shareSlug: String
+    var isAddedToReview = false
 
     var wordCount: Int { words.count }
 
@@ -514,6 +647,7 @@ final class WordStore: ObservableObject {
     @Published var userProfile = SampleData.userProfile
     @Published var sessionRatings: [ReviewRating] = []
     @Published var lightReviewWords: [VocabularyWord] = []
+    @Published var recognizedCandidatesByPhotoID: [UUID: [RecognizedWordCandidate]] = [:]
     @Published var reviewEvents = WordStore.loadReviewEvents(defaultWords: SampleData.scannedWords) {
         didSet {
             WordStore.saveReviewEvents(reviewEvents)
@@ -544,7 +678,14 @@ final class WordStore: ObservableObject {
     }
 
     func recommendationSubtitle(_ language: AppLanguage) -> String {
-        language.text(
+        if let score = currentProfile.calibrationScore, currentProfile.calibratedAt != nil {
+            return language.text(
+                en: "Personalized · Scene Readiness \(score)/100",
+                zh: "个性化筛词 · 适应度 \(score)/100"
+            )
+        }
+
+        return language.text(
             en: "Filtered by this photo · \(currentProfile.level.shortTitle(language))",
             zh: "按这张照片 · \(currentProfile.level.shortTitle(language))水平筛词"
         )
@@ -620,6 +761,10 @@ final class WordStore: ObservableObject {
         }
     }
 
+    var reviewPacks: [SharedPack] {
+        packs.filter(\.isAddedToReview)
+    }
+
     var currentReviewWord: VocabularyWord {
         let words = dueWords
         return words[reviewIndex % max(words.count, 1)]
@@ -656,8 +801,52 @@ final class WordStore: ObservableObject {
             }
         }
 
+        saveCustomWords()
         resetReviewSession()
         return scannedWords.filter { keptKeys.contains($0.storageKey) }
+    }
+
+    func saveRecognizedWords(kept: [VocabularyWord], removed: [VocabularyWord], photo: ScenePhoto) -> [VocabularyWord] {
+        let removedKeys = Set(removed.map(\.storageKey))
+        let keptKeys = Set(kept.map(\.storageKey))
+        var savedKeys: Set<String> = []
+
+        for index in scannedWords.indices {
+            let key = scannedWords[index].storageKey
+            if removedKeys.contains(key) || removed.contains(where: { isSamePhotoWord(scannedWords[index], $0, photoID: photo.id) }) {
+                scannedWords[index].isSelected = false
+                scannedWords[index].isKnown = true
+            }
+        }
+
+        for var word in kept {
+            word.isSelected = true
+            word.isKnown = false
+            word.sourcePhotoID = photo.id
+            word.encounteredAt = photo.captureDate
+
+            if let index = scannedWords.firstIndex(where: { isSamePhotoWord($0, word, photoID: photo.id) }) {
+                scannedWords[index].isSelected = true
+                scannedWords[index].isKnown = false
+                scannedWords[index].sourcePhotoID = photo.id
+                scannedWords[index].encounteredAt = photo.captureDate
+                scannedWords[index].memoryStrength = max(scannedWords[index].memoryStrength, word.memoryStrength)
+                savedKeys.insert(scannedWords[index].storageKey)
+            } else if let index = scannedWords.firstIndex(where: { $0.storageKey == word.storageKey }) {
+                scannedWords[index].isSelected = true
+                scannedWords[index].isKnown = false
+                scannedWords[index].sourcePhotoID = photo.id
+                scannedWords[index].encounteredAt = photo.captureDate
+                savedKeys.insert(scannedWords[index].storageKey)
+            } else {
+                scannedWords.append(word)
+                savedKeys.insert(word.storageKey)
+            }
+        }
+
+        saveCustomWords()
+        resetReviewSession()
+        return scannedWords.filter { savedKeys.contains($0.storageKey) || keptKeys.contains($0.storageKey) }
     }
 
     func markKnown(_ word: VocabularyWord) {
@@ -777,6 +966,9 @@ final class WordStore: ObservableObject {
         userProfile.confirmsBeforeReview = confirmsBeforeReview
         selectedCategory = defaultCategory(for: goal)
         selectedScene = defaultScene(for: goal)
+        if calibratedAt != nil {
+            UserDefaults.standard.set(false, forKey: "didShowReadinessCaptureTip")
+        }
         hasCompletedOnboarding = true
         resetReviewSession()
     }
@@ -784,6 +976,124 @@ final class WordStore: ObservableObject {
     func resetOnboarding() {
         hasCompletedOnboarding = false
         resetReviewSession()
+    }
+
+    func photo(with id: UUID) -> ScenePhoto? {
+        photos.first { $0.id == id }
+    }
+
+    func recognizedWords(for photo: ScenePhoto) -> [VocabularyWord] {
+        if let candidates = recognizedCandidatesByPhotoID[photo.id], !candidates.isEmpty {
+            return candidates.map { $0.vocabularyWord() }
+        }
+
+        return words(for: photo)
+    }
+
+    func scanPhotoForWords(photo: ScenePhoto, image: UIImage) async -> [RecognizedWordCandidate] {
+        let lines = await recognizeTextLines(in: image)
+        let classification = inferScene(from: lines)
+        applyClassification(to: photo.id, classification: classification)
+
+        let currentPhoto = self.photo(with: photo.id) ?? photo
+        let candidates = makeCandidates(from: lines, photo: currentPhoto, classification: classification)
+        recognizedCandidatesByPhotoID[photo.id] = candidates
+        updatePhotoWordCount(photoID: photo.id, wordCount: candidates.count)
+        return candidates
+    }
+
+    func inferScene(from recognizedText: [RecognizedTextLine]) -> SceneClassification {
+        let text = recognizedText.map(\.text).joined(separator: " ").lowercased()
+        let sceneScores: [(SceneClassification, [String])] = [
+            (
+                SceneClassification(sceneTitle: "Cafe ordering", category: .food, confidence: 0),
+                ["cafe", "coffee", "menu", "order", "latte", "decaf", "milk", "surcharge", "takeaway", "dine", "gluten", "refill"]
+            ),
+            (
+                SceneClassification(sceneTitle: "Transport signs", category: .transport, confidence: 0),
+                ["platform", "route", "fare", "ticket", "parking", "permit", "loading", "tow", "departure", "arrival", "gate", "terminal", "stop"]
+            ),
+            (
+                SceneClassification(sceneTitle: "Clinic and pharmacy", category: .medical, confidence: 0),
+                ["clinic", "pharmacy", "prescription", "medicine", "dose", "tablet", "capsule", "symptom", "fever", "allergy", "appointment", "emergency"]
+            ),
+            (
+                SceneClassification(sceneTitle: "Housing and bills", category: .work, confidence: 0),
+                ["rent", "lease", "landlord", "tenant", "bond", "utilities", "electricity", "internet", "bill", "meter", "inspection", "maintenance", "mould"]
+            ),
+            (
+                SceneClassification(sceneTitle: "Supermarket shopping", category: .dailyLife, confidence: 0),
+                ["aisle", "shelf", "basket", "trolley", "receipt", "checkout", "barcode", "discount", "clearance", "refund", "organic", "frozen", "ingredient", "nutrition"]
+            )
+        ]
+
+        let ranked = sceneScores.map { classification, keywords in
+            let score = keywords.reduce(0) { partial, keyword in
+                partial + (text.contains(keyword) ? 1 : 0)
+            }
+            return (classification, score)
+        }
+        .sorted { $0.1 > $1.1 }
+
+        if let best = ranked.first, best.1 > 0 {
+            let confidence = min(0.98, 0.42 + Double(best.1) * 0.12)
+            return SceneClassification(
+                sceneTitle: best.0.sceneTitle,
+                category: best.0.category,
+                confidence: confidence
+            )
+        }
+
+        return SceneClassification(
+            sceneTitle: selectedScene.isEmpty ? "Captured scene" : selectedScene,
+            category: selectedCategory,
+            confidence: 0.25
+        )
+    }
+
+    func applyClassification(to photoID: UUID, classification: SceneClassification) {
+        selectedCategory = classification.category
+        selectedScene = classification.sceneTitle
+
+        guard let index = photos.firstIndex(where: { $0.id == photoID }) else { return }
+        let photo = photos[index]
+        photos[index] = ScenePhoto(
+            id: photo.id,
+            title: photo.title,
+            suggestedScene: classification.sceneTitle,
+            category: classification.category,
+            wordCount: photo.wordCount,
+            symbol: photo.symbol,
+            captureDate: photo.captureDate,
+            imageFilename: photo.imageFilename
+        )
+        savePhotoHistory()
+    }
+
+    func reclassifyRecognizedPhoto(photoID: UUID, category: WordCategory, scene: String) {
+        let classification = SceneClassification(sceneTitle: scene, category: category, confidence: 1)
+        applyClassification(to: photoID, classification: classification)
+
+        guard let candidates = recognizedCandidatesByPhotoID[photoID] else { return }
+        recognizedCandidatesByPhotoID[photoID] = candidates.map {
+            $0.reclassified(category: category, sourceScene: scene)
+        }
+    }
+
+    private func updatePhotoWordCount(photoID: UUID, wordCount: Int) {
+        guard let index = photos.firstIndex(where: { $0.id == photoID }) else { return }
+        let photo = photos[index]
+        photos[index] = ScenePhoto(
+            id: photo.id,
+            title: photo.title,
+            suggestedScene: photo.suggestedScene,
+            category: photo.category,
+            wordCount: max(wordCount, 0),
+            symbol: photo.symbol,
+            captureDate: photo.captureDate,
+            imageFilename: photo.imageFilename
+        )
+        savePhotoHistory()
     }
 
     func usePhoto(_ photo: ScenePhoto) {
@@ -805,12 +1115,11 @@ final class WordStore: ObservableObject {
     func addPhoto(_ image: UIImage, source: PhotoCaptureSource) -> ScenePhoto {
         let filename = "\(UUID().uuidString).jpg"
         let storedFilename = saveImage(image, filename: filename) ? filename : nil
-        let visibleWords = scannedWords.filter { $0.group != .hidden }
         let photo = ScenePhoto(
             title: source.title,
             suggestedScene: selectedScene,
             category: selectedCategory,
-            wordCount: max(visibleWords.count, 1),
+            wordCount: 0,
             symbol: source.symbol,
             captureDate: Date(),
             imageFilename: storedFilename
@@ -818,7 +1127,6 @@ final class WordStore: ObservableObject {
 
         photos.insert(photo, at: 0)
         savePhotoHistory()
-        usePhoto(photo)
         return photo
     }
 
@@ -902,6 +1210,10 @@ final class WordStore: ObservableObject {
         let packWords = Set(pack.words.map { $0.lowercased() })
         let category = category(for: pack)
 
+        if let index = packs.firstIndex(where: { $0.id == pack.id }) {
+            packs[index].isAddedToReview = true
+        }
+
         for word in pack.words where scannedWords.first(where: { $0.text.caseInsensitiveCompare(word) == .orderedSame }) == nil {
             scannedWords.append(
                 VocabularyWord(
@@ -934,6 +1246,13 @@ final class WordStore: ObservableObject {
         selectedScene = pack.title
         lightReviewWords = scannedWords.filter { packWords.contains($0.text.lowercased()) && isReviewCandidate($0, reviewableOnly: true) }
         resetReviewSession()
+    }
+
+    func reviewWords(for pack: SharedPack) -> [VocabularyWord] {
+        let packWords = Set(pack.words.map { $0.lowercased() })
+        return scannedWords.filter {
+            packWords.contains($0.text.lowercased()) && isReviewCandidate($0, reviewableOnly: true)
+        }
     }
 
     func createPackFromCurrentPhoto(
@@ -1019,6 +1338,169 @@ final class WordStore: ObservableObject {
         }
 
         return result
+    }
+
+    private func makeCandidates(
+        from lines: [RecognizedTextLine],
+        photo: ScenePhoto,
+        classification: SceneClassification
+    ) -> [RecognizedWordCandidate] {
+        let lexicon = Dictionary(grouping: scannedWords) { $0.text.normalizedVocabularyKey }
+            .compactMapValues { words in
+                words.first { $0.group != .hidden } ?? words.first
+            }
+        let phraseWords = scannedWords
+            .filter { $0.text.contains(" ") || $0.text.contains("-") }
+            .sorted { $0.text.count > $1.text.count }
+        var seen: Set<String> = []
+        var candidates: [RecognizedWordCandidate] = []
+
+        for line in lines {
+            let lineKey = line.text.normalizedVocabularyKey
+
+            for phrase in phraseWords where lineKey.contains(phrase.text.normalizedVocabularyKey) {
+                appendCandidate(
+                    phrase.text,
+                    line: line,
+                    lexicon: lexicon,
+                    photo: photo,
+                    classification: classification,
+                    seen: &seen,
+                    candidates: &candidates
+                )
+            }
+
+            for token in wordTokens(in: line.text) {
+                appendCandidate(
+                    token,
+                    line: line,
+                    lexicon: lexicon,
+                    photo: photo,
+                    classification: classification,
+                    seen: &seen,
+                    candidates: &candidates
+                )
+            }
+        }
+
+        return Array(candidates.prefix(24))
+    }
+
+    private func appendCandidate(
+        _ rawText: String,
+        line: RecognizedTextLine,
+        lexicon: [String: VocabularyWord],
+        photo: ScenePhoto,
+        classification: SceneClassification,
+        seen: inout Set<String>,
+        candidates: inout [RecognizedWordCandidate]
+    ) {
+        let normalizedText = rawText.normalizedVocabularyKey
+        guard !normalizedText.isEmpty, !seen.contains(normalizedText) else { return }
+
+        let lexiconWord = lexicon[normalizedText]
+        guard !shouldHideRecognizedWord(normalizedText: normalizedText, lexiconWord: lexiconWord) else { return }
+
+        seen.insert(normalizedText)
+        let category = lexiconWord?.category ?? classification.category
+        let sourceScene = classification.sceneTitle
+        let isKnownLexiconWord = lexiconWord != nil
+
+        candidates.append(
+            RecognizedWordCandidate(
+                text: lexiconWord?.text ?? rawText.cleanedRecognizedWord,
+                normalizedText: normalizedText,
+                meaning: lexiconWord?.meaning,
+                note: lexiconWord?.note ?? "Recognized from your photo. Add a meaning when you are ready.",
+                contextLine: line.text,
+                nextUse: lexiconWord?.nextUse ?? "Use it when this real-world scene comes up.",
+                category: category,
+                sourceScene: sourceScene,
+                confidence: line.confidence,
+                sourcePhotoID: photo.id,
+                encounteredAt: photo.captureDate,
+                isKnownLexiconWord: isKnownLexiconWord,
+                group: lexiconWord?.group == .phrases ? .phrases : .recommended
+            )
+        )
+    }
+
+    private func shouldHideRecognizedWord(normalizedText: String, lexiconWord: VocabularyWord?) -> Bool {
+        guard normalizedText.count > 1 else { return true }
+        let alwaysHidden = [
+            "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "in", "is", "it",
+            "of", "on", "or", "the", "to", "with", "you", "your", "we", "our", "this", "that"
+        ]
+        if alwaysHidden.contains(normalizedText) { return true }
+
+        guard currentProfile.hidesKnownWords else { return false }
+        if lexiconWord?.group == .hidden { return true }
+
+        let readiness = currentProfile.calibrationScore ?? 0
+        let basicWords = [
+            "coffee", "milk", "cup", "water", "food", "tea", "bus", "car", "stop", "shop",
+            "day", "open", "closed", "name", "date", "phone", "email"
+        ]
+
+        return readiness >= 55 && basicWords.contains(normalizedText)
+    }
+
+    private func wordTokens(in text: String) -> [String] {
+        let pattern = #"[A-Za-z][A-Za-z'’\-]*"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+        let range = NSRange(text.startIndex ..< text.endIndex, in: text)
+        return regex.matches(in: text, range: range).compactMap { match in
+            guard let matchRange = Range(match.range, in: text) else { return nil }
+            return String(text[matchRange]).cleanedRecognizedWord
+        }
+    }
+
+    private func recognizeTextLines(in image: UIImage) async -> [RecognizedTextLine] {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                guard let cgImage = image.cgImage else {
+                    continuation.resume(returning: [])
+                    return
+                }
+
+                let request = VNRecognizeTextRequest()
+                request.recognitionLevel = .accurate
+                request.usesLanguageCorrection = true
+                request.recognitionLanguages = ["en-US"]
+                request.minimumTextHeight = 0.012
+
+                let handler = VNImageRequestHandler(
+                    cgImage: cgImage,
+                    orientation: image.cgImageOrientation,
+                    options: [:]
+                )
+
+                do {
+                    try handler.perform([request])
+                    let observations = request.results ?? []
+                    let lines = observations.compactMap { observation -> RecognizedTextLine? in
+                        guard let candidate = observation.topCandidates(1).first else { return nil }
+                        let text = candidate.string.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !text.isEmpty else { return nil }
+                        return RecognizedTextLine(
+                            text: text,
+                            confidence: candidate.confidence,
+                            boundingBox: observation.boundingBox
+                        )
+                    }
+
+                    continuation.resume(returning: lines)
+                } catch {
+                    continuation.resume(returning: [])
+                }
+            }
+        }
+    }
+
+    private func isSamePhotoWord(_ lhs: VocabularyWord, _ rhs: VocabularyWord, photoID: UUID) -> Bool {
+        lhs.sourcePhotoID == photoID
+            && rhs.sourcePhotoID == photoID
+            && lhs.text.normalizedVocabularyKey == rhs.text.normalizedVocabularyKey
     }
 
     private func avatarInitial(for name: String) -> String {
@@ -1126,6 +1608,10 @@ final class WordStore: ObservableObject {
         documentsURL?.appendingPathComponent("scene-photo-history.json")
     }
 
+    private static var customVocabularyURL: URL? {
+        documentsURL?.appendingPathComponent("scene-custom-words.json")
+    }
+
     private static func photoImageURL(for filename: String) -> URL? {
         documentsURL?
             .appendingPathComponent("ScenePhotos", isDirectory: true)
@@ -1194,13 +1680,15 @@ final class WordStore: ObservableObject {
 
     private static func loadWordStates(defaultWords: [VocabularyWord]) -> [VocabularyWord] {
         let defaults = UserDefaults.standard
+        let words = defaultWords + loadCustomWords()
+
         guard let data = defaults.data(forKey: "wordLearningStates") else {
-            return defaultWords
+            return words
         }
 
         do {
             let states = try JSONDecoder().decode([String: WordLearningState].self, from: data)
-            return defaultWords.map { word in
+            return words.map { word in
                 guard let state = states[word.storageKey] else { return word }
                 var updatedWord = word
                 updatedWord.isSelected = state.isSelected
@@ -1208,7 +1696,42 @@ final class WordStore: ObservableObject {
                 return updatedWord
             }
         } catch {
-            return defaultWords
+            return words
+        }
+    }
+
+    private static func loadCustomWords() -> [VocabularyWord] {
+        guard
+            let url = customVocabularyURL,
+            FileManager.default.fileExists(atPath: url.path)
+        else {
+            return []
+        }
+
+        do {
+            let data = try Data(contentsOf: url)
+            return try JSONDecoder().decode([StoredVocabularyWord].self, from: data)
+                .map { $0.vocabularyWord() }
+        } catch {
+            return []
+        }
+    }
+
+    private func saveCustomWords() {
+        guard let url = WordStore.customVocabularyURL else { return }
+        let records = scannedWords
+            .filter(\.isUserGenerated)
+            .map { StoredVocabularyWord(word: $0) }
+
+        do {
+            try FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            let data = try JSONEncoder().encode(records)
+            try data.write(to: url, options: .atomic)
+        } catch {
+            // Custom OCR words should not block the active capture flow.
         }
     }
 
@@ -1234,6 +1757,12 @@ extension VocabularyWord {
             category.rawValue.normalizedStorageKeyComponent
         ].joined(separator: "|")
     }
+
+    func meaningText(_ language: AppLanguage) -> String {
+        meaning == VocabularyWord.pendingMeaning
+            ? language.text(en: "Meaning to add", zh: "待补充释义")
+            : meaning
+    }
 }
 
 private extension UIImage {
@@ -1249,6 +1778,20 @@ private extension UIImage {
             draw(in: CGRect(origin: .zero, size: newSize))
         }
     }
+
+    var cgImageOrientation: CGImagePropertyOrientation {
+        switch imageOrientation {
+        case .up: .up
+        case .down: .down
+        case .left: .left
+        case .right: .right
+        case .upMirrored: .upMirrored
+        case .downMirrored: .downMirrored
+        case .leftMirrored: .leftMirrored
+        case .rightMirrored: .rightMirrored
+        @unknown default: .up
+        }
+    }
 }
 
 private extension String {
@@ -1260,6 +1803,19 @@ private extension String {
         lowercased()
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "\\s+", with: "-", options: .regularExpression)
+    }
+
+    var normalizedVocabularyKey: String {
+        lowercased()
+            .replacingOccurrences(of: "[^a-z0-9\\s\\-]", with: "", options: .regularExpression)
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var cleanedRecognizedWord: String {
+        trimmingCharacters(in: CharacterSet(charactersIn: ".,;:!?()[]{}\"“”‘’"))
+            .replacingOccurrences(of: "’", with: "'")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 
