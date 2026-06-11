@@ -63,7 +63,6 @@ struct OnboardingView: View {
             TabView(selection: $step) {
                 loginStep.tag(OnboardingStep.login)
                 languageStep.tag(OnboardingStep.language)
-                welcomeStep.tag(OnboardingStep.welcome)
                 levelStep.tag(OnboardingStep.level)
                 transitLevelStep.tag(OnboardingStep.transitLevel)
                 shoppingLevelStep.tag(OnboardingStep.shoppingLevel)
@@ -127,7 +126,7 @@ struct OnboardingView: View {
 
     @ViewBuilder
     private var topBarTrailingControl: some View {
-        if step != .login && step != .language && step != .welcome && !step.isSceneCalibration {
+        if step != .login && step != .language && !step.isSceneCalibration {
             Menu {
                 ForEach(AppLanguage.allCases) { language in
                     Button {
@@ -266,39 +265,6 @@ struct OnboardingView: View {
         .background(onboardingBackground)
     }
 
-    private var welcomeStep: some View {
-        ScrollView {
-            VStack(spacing: 18) {
-                OnboardingBrandMark()
-                    .padding(.top, 4)
-
-                VStack(spacing: 8) {
-                    Text(store.appLanguage.text(en: "Learn Words\nFrom Real Life", zh: "学习真实生活里\n遇见过的单词"))
-                        .font(.system(size: 24, weight: .bold, design: .serif))
-                        .multilineTextAlignment(.center)
-                        .lineSpacing(1)
-                        .foregroundStyle(.black)
-
-                    Text(store.appLanguage.text(en: "Take one photo, keep the scene, and review the words you actually saw.", zh: "拍一张真实照片，保留场景，再复习你真正遇见过的词。"))
-                        .font(.system(size: 13, weight: .regular))
-                        .foregroundStyle(.black.opacity(0.48))
-                        .multilineTextAlignment(.center)
-                        .lineSpacing(2)
-                        .padding(.horizontal, 12)
-                }
-
-                AnimatedScanDemo(largeHeight: 282)
-                    .frame(maxHeight: 282)
-                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                    .padding(.top, 4)
-            }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 12)
-            .frame(maxWidth: .infinity)
-        }
-        .background(onboardingBackground)
-    }
-
     private var levelStep: some View {
         SceneVocabularyCalibrationView(
             language: store.appLanguage,
@@ -372,7 +338,7 @@ struct OnboardingView: View {
                 }
             }
 
-            if step == .language || step == .welcome {
+            if step == .language {
                 Button {
                     advance()
                 } label: {
@@ -412,14 +378,13 @@ struct OnboardingView: View {
         switch step {
         case .login: "Continue"
         case .language: "Next"
-        case .welcome: store.appLanguage.text(en: "Next", zh: "下一步")
         case .level, .transitLevel, .shoppingLevel, .housingLevel, .medicalLevel, .calibrationResult: "Next"
         }
     }
 
     private var onboardingBackground: Color {
         switch step {
-        case .login, .language, .welcome:
+        case .login, .language:
             .onboardingCanvas
         case .level:
             .sceneOrange
@@ -501,8 +466,6 @@ struct OnboardingView: View {
             guard store.isSignedIn else { return }
             withAnimation(.snappy) { step = .language }
         case .language:
-            withAnimation(.snappy) { step = .welcome }
-        case .welcome:
             withAnimation(.snappy) { step = .level }
         case .level:
             withAnimation(.snappy) { step = .transitLevel }
@@ -545,10 +508,8 @@ struct OnboardingView: View {
             break
         case .language:
             withAnimation(.snappy) { step = .login }
-        case .welcome:
-            withAnimation(.snappy) { step = .language }
         case .level:
-            withAnimation(.snappy) { step = .welcome }
+            withAnimation(.snappy) { step = .language }
         case .transitLevel:
             withAnimation(.snappy) { step = .level }
         case .shoppingLevel:
@@ -566,7 +527,6 @@ struct OnboardingView: View {
 private enum OnboardingStep: Int, CaseIterable, Identifiable {
     case login
     case language
-    case welcome
     case level
     case transitLevel
     case shoppingLevel
@@ -581,7 +541,7 @@ private enum OnboardingStep: Int, CaseIterable, Identifiable {
     }
 
     static var flowSteps: [OnboardingStep] {
-        [.welcome, .level, .transitLevel, .shoppingLevel, .housingLevel, .medicalLevel]
+        [.level, .transitLevel, .shoppingLevel, .housingLevel, .medicalLevel]
     }
 }
 
