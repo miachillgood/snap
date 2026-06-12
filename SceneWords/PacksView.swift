@@ -26,7 +26,9 @@ struct PacksView: View {
                     ForEach($store.packs) { $pack in
                         if selectedFilter.includes(pack, currentUserName: store.currentProfile.name)
                             && pack.matchesSearch(searchText) {
-                            PackCard(pack: $pack)
+                            PackCard(pack: $pack) {
+                                deletePack(pack)
+                            }
                         }
                     }
                 }
@@ -151,13 +153,22 @@ struct PacksView: View {
         .padding(24)
         .background(.background, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
+
+    private func deletePack(_ pack: SharedPack) {
+        withAnimation(.snappy(duration: 0.2)) {
+            store.packs.removeAll { $0.id == pack.id }
+        }
+    }
 }
 
 private struct PackCard: View {
     @EnvironmentObject private var store: WordStore
     @Binding var pack: SharedPack
+    let onDelete: () -> Void
     @State private var isLearning = false
     @State private var showsAllWords = false
+    @State private var isShowingEditor = false
+    @State private var isConfirmingDelete = false
 
     private var isOwnPack: Bool {
         pack.owner == store.currentProfile.name
@@ -191,6 +202,12 @@ private struct PackCard: View {
                             .lineLimit(2)
                     }
                 }
+
+                Spacer(minLength: 6)
+
+                if isOwnPack {
+                    packActionsMenu
+                }
             }
 
             HStack(spacing: 8) {
@@ -219,21 +236,6 @@ private struct PackCard: View {
             }
             .font(.caption)
             .foregroundStyle(.secondary)
-
-            if isOwnPack {
-                VStack(alignment: .leading, spacing: 6) {
-                    Picker(store.appLanguage.text(en: "Visibility", zh: "可见范围"), selection: visibilityBinding) {
-                        ForEach(PackVisibility.allCases) { visibility in
-                            Text(visibility.title(store.appLanguage)).tag(visibility)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-
-                    Text(pack.visibility.description(store.appLanguage))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
 
             VStack(alignment: .leading, spacing: 10) {
                 SectionHeader(
@@ -281,21 +283,70 @@ private struct PackCard: View {
         }
         .padding(16)
         .background(.background, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .sheet(isPresented: $isShowingEditor) {
+            PackEditorView(pack: $pack)
+                .environmentObject(store)
+        }
+        .alert(store.appLanguage.text(en: "Delete pack?", zh: "删除这个词包？"), isPresented: $isConfirmingDelete) {
+            Button(store.appLanguage.text(en: "Cancel", zh: "取消"), role: .cancel) {}
+            Button(store.appLanguage.text(en: "Delete", zh: "删除"), role: .destructive) {
+                onDelete()
+            }
+        } message: {
+            Text(store.appLanguage.text(en: "This removes the pack from My packs. Words already saved for review will stay in your review history.", zh: "它会从“我的词包”里移除；已经加入复习的单词仍会留在复习记录里。"))
+        }
         .navigationDestination(isPresented: $isLearning) {
             LightReviewSessionView(words: store.lightReviewWords.isEmpty ? store.dueWords : store.lightReviewWords, title: pack.title)
         }
     }
 
-    private var visibilityBinding: Binding<PackVisibility> {
-        Binding {
-            pack.visibility
-        } set: { newVisibility in
-            if pack.description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && newVisibility != .privatePack {
-                pack.visibility = .privatePack
-            } else {
-                pack.visibility = newVisibility
+    private var packActionsMenu: some View {
+        Menu {
+            Section(store.appLanguage.text(en: "Visibility", zh: "可见范围")) {
+                ForEach(PackVisibility.allCases) { visibility in
+                    Button {
+                        setVisibility(visibility)
+                    } label: {
+                        Label(
+                            visibility.title(store.appLanguage),
+                            systemImage: pack.visibility == visibility ? "checkmark.circle.fill" : visibility.symbol
+                        )
+                    }
+                    .disabled(!canUseVisibility(visibility))
+                }
             }
+
+            Section {
+                Button {
+                    isShowingEditor = true
+                } label: {
+                    Label(store.appLanguage.text(en: "Edit pack", zh: "编辑词包"), systemImage: "pencil")
+                }
+
+                Button(role: .destructive) {
+                    isConfirmingDelete = true
+                } label: {
+                    Label(store.appLanguage.text(en: "Delete pack", zh: "删除词包"), systemImage: "trash")
+                }
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.headline.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 34, height: 34)
+                .background(Color.secondary.opacity(0.1), in: Circle())
         }
+        .buttonStyle(.plain)
+        .accessibilityLabel(store.appLanguage.text(en: "Pack actions", zh: "词包操作"))
+    }
+
+    private func canUseVisibility(_ visibility: PackVisibility) -> Bool {
+        visibility == .privatePack || !pack.description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func setVisibility(_ visibility: PackVisibility) {
+        guard canUseVisibility(visibility) else { return }
+        pack.visibility = visibility
     }
 
     private var primaryActionTitle: String {
@@ -308,6 +359,115 @@ private struct PackCard: View {
         }
 
         return store.appLanguage.text(en: "Add to Review", zh: "加入复习")
+    }
+}
+
+private struct PackEditorView: View {
+    @EnvironmentObject private var store: WordStore
+    @Environment(\.dismiss) private var dismiss
+    @Binding var pack: SharedPack
+    @State private var title = ""
+    @State private var description = ""
+    @State private var location = ""
+    @State private var category: WordCategory = .food
+    @State private var tagsText = ""
+    @State private var visibility: PackVisibility = .privatePack
+
+    private var cleanTitle: String {
+        title.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var cleanDescription: String {
+        description.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var cleanLocation: String {
+        location.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var canShare: Bool {
+        !cleanDescription.isEmpty
+    }
+
+    private var finalVisibility: PackVisibility {
+        canShare ? visibility : .privatePack
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section(store.appLanguage.text(en: "Pack", zh: "词包")) {
+                    TextField(store.appLanguage.text(en: "Title", zh: "标题"), text: $title)
+                    TextField(store.appLanguage.text(en: "Description", zh: "描述"), text: $description, axis: .vertical)
+                        .lineLimit(3, reservesSpace: true)
+                    TextField(store.appLanguage.text(en: "Location", zh: "地点"), text: $location)
+                }
+
+                Section {
+                    Picker(store.appLanguage.text(en: "Category", zh: "分类"), selection: $category) {
+                        ForEach(WordCategory.allCases) { category in
+                            Label(category.title(store.appLanguage), systemImage: category.icon).tag(category)
+                        }
+                    }
+
+                    TextField(store.appLanguage.text(en: "Tags separated by commas", zh: "用逗号分隔标签"), text: $tagsText)
+                        .textInputAutocapitalization(.never)
+
+                    Picker(store.appLanguage.text(en: "Visibility", zh: "可见范围"), selection: $visibility) {
+                        ForEach(PackVisibility.allCases) { visibility in
+                            Label(visibility.title(store.appLanguage), systemImage: visibility.symbol).tag(visibility)
+                        }
+                    }
+                } header: {
+                    Text(store.appLanguage.text(en: "Discovery", zh: "发现方式"))
+                } footer: {
+                    Text(store.appLanguage.text(en: canShare ? "Public packs appear in search. Unlisted packs open by link only." : "Add a description before making this pack public or unlisted.", zh: canShare ? "公开词包会出现在搜索里；仅链接词包只能通过链接打开。" : "先写描述，才能把词包设为公开或仅链接。"))
+                }
+            }
+            .navigationTitle(store.appLanguage.text(en: "Edit pack", zh: "编辑词包"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button(store.appLanguage.text(en: "Cancel", zh: "取消")) {
+                        dismiss()
+                    }
+                }
+
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(store.appLanguage.text(en: "Save", zh: "保存")) {
+                        saveDraft()
+                        dismiss()
+                    }
+                    .disabled(cleanTitle.isEmpty)
+                }
+            }
+            .onAppear(perform: loadDraft)
+        }
+    }
+
+    private func loadDraft() {
+        title = pack.title
+        description = pack.description
+        location = pack.location
+        category = pack.category
+        tagsText = pack.tags.joined(separator: ", ")
+        visibility = pack.visibility
+    }
+
+    private func saveDraft() {
+        pack.title = cleanTitle
+        pack.description = cleanDescription
+        pack.location = cleanLocation.isEmpty ? store.appLanguage.text(en: "Real scene", zh: "真实场景") : cleanLocation
+        pack.category = category
+        pack.tags = tags
+        pack.visibility = finalVisibility
+    }
+
+    private var tags: [String] {
+        tagsText
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
     }
 }
 
