@@ -16,10 +16,14 @@ struct CameraView: View {
     @State private var isProcessingPhoto = false
     @State private var showsCameraUnavailable = false
     @State private var capturedPhotoForSelection: ScenePhoto?
+    @AppStorage("didShowReadinessCaptureTip") private var didShowReadinessCaptureTip = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
+                if shouldShowReadinessCaptureTip {
+                    readinessCaptureTip
+                }
                 captureLensCard
                 photoHistory
             }
@@ -59,6 +63,48 @@ struct CameraView: View {
         } message: {
             Text(store.appLanguage.text(en: "This device cannot open the camera here. You can still choose a photo from the library.", zh: "当前设备无法在这里打开摄像头。你仍然可以从图库选择照片。"))
         }
+    }
+
+    private var shouldShowReadinessCaptureTip: Bool {
+        !didShowReadinessCaptureTip && store.currentProfile.calibratedAt != nil
+    }
+
+    private var readinessCaptureTip: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "sparkles")
+                .font(.headline.weight(.bold))
+                .foregroundStyle(.white)
+                .frame(width: 38, height: 38)
+                .background(Color.mainAccent, in: Circle())
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text(store.appLanguage.text(en: "Personalized filtering is on", zh: "个性化筛词已开启"))
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                Text(store.appLanguage.text(en: "SeenWords is filtering words using your Scene Readiness score.", zh: "已按你的生活场景适应度为你筛词。"))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 0)
+
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    didShowReadinessCaptureTip = true
+                }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 28, height: 28)
+                    .background(Color.secondary.opacity(0.1), in: Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(store.appLanguage.text(en: "Dismiss", zh: "关闭"))
+        }
+        .padding(16)
+        .background(.background, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 
     private var header: some View {
@@ -469,15 +515,13 @@ struct CapturedWordsSelectionView: View {
     @State private var isEditingCategory = false
     @State private var shouldCloseFlow = false
 
-    private var candidateWords: [VocabularyWord] {
-        let directWords = store.scannedWords.filter {
-            $0.sourcePhotoID == photo.id && $0.group != .hidden && !$0.isKnown
-        }
-        let fallbackWords = store.scannedWords.filter {
-            $0.category == photo.category && $0.group != .hidden && !$0.isKnown
-        }
+    private var currentPhoto: ScenePhoto {
+        store.photo(with: photo.id) ?? photo
+    }
 
-        return (directWords.isEmpty ? fallbackWords : directWords)
+    private var candidateWords: [VocabularyWord] {
+        store.recognizedWords(for: currentPhoto)
+            .filter { $0.group != .hidden && !$0.isKnown }
             .sorted { $0.group.rawValue < $1.group.rawValue }
     }
 
@@ -489,7 +533,7 @@ struct CapturedWordsSelectionView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 header
-                ScenePhotoImage(photo: photo, height: 220, cornerRadius: 24)
+                ScenePhotoImage(photo: currentPhoto, height: 220, cornerRadius: 24)
                 categorySuggestion
                 wordPicker
             }
@@ -504,12 +548,12 @@ struct CapturedWordsSelectionView: View {
             continueBar
         }
         .sheet(isPresented: $isEditingCategory) {
-            CategoryEditor()
+            PhotoCategoryEditor(photo: currentPhoto)
                 .presentationDetents([.medium])
         }
         .navigationDestination(isPresented: $isConfirmingWords) {
             WordConfirmationFlowView(
-                photo: photo,
+                photo: currentPhoto,
                 initialWords: selectedWords,
                 shouldCloseSelection: $shouldCloseFlow
             )
@@ -535,8 +579,8 @@ struct CapturedWordsSelectionView: View {
 
     private var categorySuggestion: some View {
         HStack(spacing: 10) {
-            CategoryBadge(category: store.selectedCategory)
-            Text(store.selectedScene)
+            CategoryBadge(category: currentPhoto.category)
+            Text(currentPhoto.suggestedScene)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
@@ -557,11 +601,11 @@ struct CapturedWordsSelectionView: View {
             if candidateWords.isEmpty {
                 SelectionEmptyState(
                     symbol: "text.word.spacing",
-                    text: store.appLanguage.text(en: "No new words found for this scene yet.", zh: "这个场景暂时没有新的候选词。")
+                    text: store.appLanguage.text(en: "No clear English words were found in this photo. Try a sharper image or a closer crop.", zh: "这张照片暂时没有识别到清晰英文词。可以换一张更近、更清楚的照片。")
                 )
             } else {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-                    ForEach(candidateWords) { word in
+                    ForEach(candidateWords, id: \.storageKey) { word in
                         Button {
                             toggle(word)
                         } label: {
@@ -633,7 +677,7 @@ private struct ExtractedWordChoice: View {
                 .foregroundStyle(.primary)
                 .lineLimit(2)
                 .minimumScaleFactor(0.72)
-            Text(word.meaning)
+            Text(word.meaningText(store.appLanguage))
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(Color.mainAccent)
                 .lineLimit(1)
@@ -712,6 +756,7 @@ struct WordConfirmationFlowView: View {
     @State private var savedWords: [VocabularyWord] = []
     @State private var hasSaved = false
     @State private var isReviewing = false
+    @State private var lastSpokenKey: String?
     @StateObject private var speechPlayer = WordSpeechPlayer()
 
     init(photo: ScenePhoto, initialWords: [VocabularyWord], shouldCloseSelection: Binding<Bool>) {
@@ -755,6 +800,12 @@ struct WordConfirmationFlowView: View {
         .navigationDestination(isPresented: $isReviewing) {
             LightReviewSessionView(words: savedWords, title: photo.title(store.appLanguage))
         }
+        .onAppear {
+            speakCurrentWord()
+        }
+        .onChange(of: currentIndex) { _, _ in
+            speakCurrentWord()
+        }
     }
 
     private var confirmationHeader: some View {
@@ -789,7 +840,7 @@ struct WordConfirmationFlowView: View {
             Button {
                 removeCurrentWord()
             } label: {
-                Label(store.appLanguage.text(en: "I know this", zh: "这个我会"), systemImage: "checkmark.seal")
+                Label(store.appLanguage.text(en: "Remove word", zh: "移除这个词"), systemImage: "minus.circle")
                     .font(.headline)
                     .frame(maxWidth: .infinity)
             }
@@ -802,8 +853,8 @@ struct WordConfirmationFlowView: View {
             } label: {
                 Label(
                     currentIndex == draftWords.count - 1
-                        ? store.appLanguage.text(en: "Keep & Finish", zh: "保留并完成")
-                        : store.appLanguage.text(en: "Keep & Next", zh: "保留，下一个"),
+                        ? store.appLanguage.text(en: "Finish confirmation", zh: "完成确认")
+                        : store.appLanguage.text(en: "Next", zh: "下一个"),
                     systemImage: "arrow.right"
                 )
                 .font(.headline)
@@ -841,7 +892,7 @@ struct WordConfirmationFlowView: View {
                         HStack {
                             WordChip(text: word.text, color: word.category.color, isSelected: true)
                             Spacer()
-                            Text(word.meaning)
+                            Text(word.meaningText(store.appLanguage))
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
@@ -914,7 +965,11 @@ struct WordConfirmationFlowView: View {
             return store.appLanguage.text(en: "No words saved", zh: "没有保存单词")
         }
 
-        return store.appLanguage.text(en: "\(draftWords.count) words saved", zh: "已保存 \(draftWords.count) 个单词")
+        if hasSaved {
+            return store.appLanguage.text(en: "\(draftWords.count) words saved", zh: "已保存 \(draftWords.count) 个单词")
+        }
+
+        return store.appLanguage.text(en: "\(draftWords.count) words ready to save", zh: "\(draftWords.count) 个单词待保存")
     }
 
     private var saveButtonTitle: String {
@@ -954,6 +1009,10 @@ struct WordConfirmationFlowView: View {
         if currentIndex > draftWords.count {
             currentIndex = draftWords.count
         }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
+            speakCurrentWord()
+        }
     }
 
     private func undoRemove(_ removed: RemovedWord) {
@@ -967,8 +1026,16 @@ struct WordConfirmationFlowView: View {
     }
 
     private func saveWords() {
-        savedWords = store.saveConfirmedWords(kept: draftWords, removed: removedWords)
+        savedWords = store.saveRecognizedWords(kept: draftWords, removed: removedWords, photo: photo)
         hasSaved = true
+    }
+
+    private func speakCurrentWord() {
+        guard !isSummary, draftWords.indices.contains(currentIndex) else { return }
+        let word = draftWords[currentIndex]
+        guard lastSpokenKey != word.storageKey else { return }
+        lastSpokenKey = word.storageKey
+        speechPlayer.speak(word.text, language: store.appLanguage)
     }
 }
 
@@ -1006,7 +1073,7 @@ private struct WordConfirmationDetailCard: View {
                     .font(.largeTitle.bold())
                     .lineLimit(2)
                     .minimumScaleFactor(0.72)
-                Text(word.meaning)
+                Text(word.meaningText(store.appLanguage))
                     .font(.title3.weight(.semibold))
                     .foregroundStyle(Color.mainAccent)
             }
@@ -1133,12 +1200,17 @@ private extension CameraView {
     }
 
     func handleCapturedImage(_ image: UIImage, source: PhotoCaptureSource) {
-        isProcessingPhoto = false
         selectedPhotoItem = nil
         let photo = store.addPhoto(image, source: source)
         startScanAnimation()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) {
-            capturedPhotoForSelection = photo
+
+        Task {
+            _ = await store.scanPhotoForWords(photo: photo, image: image)
+            await MainActor.run {
+                isProcessingPhoto = false
+                scanStage = .ready
+                capturedPhotoForSelection = store.photo(with: photo.id) ?? photo
+            }
         }
     }
 
@@ -1487,6 +1559,72 @@ private struct HiddenWordsCollapsed: View {
             .tint(.mainAction)
         }
         .padding(16)
+    }
+}
+
+private struct PhotoCategoryEditor: View {
+    @EnvironmentObject private var store: WordStore
+    @Environment(\.dismiss) private var dismiss
+    let photo: ScenePhoto
+    @State private var selectedCategory: WordCategory
+    @State private var selectedScene: String
+
+    private let scenes = ["Cafe ordering", "Transport signs", "Clinic and pharmacy", "Supermarket shopping", "Housing and bills", "Work note"]
+
+    init(photo: ScenePhoto) {
+        self.photo = photo
+        _selectedCategory = State(initialValue: photo.category)
+        _selectedScene = State(initialValue: photo.suggestedScene)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Picker(store.appLanguage.text(en: "Category", zh: "分类"), selection: $selectedCategory) {
+                    ForEach(WordCategory.allCases) { category in
+                        Label(category.title(store.appLanguage), systemImage: category.icon).tag(category)
+                    }
+                }
+
+                Picker(store.appLanguage.text(en: "Scene", zh: "场景"), selection: $selectedScene) {
+                    ForEach(scenes, id: \.self) { scene in
+                        Text(sceneTitle(scene)).tag(scene)
+                    }
+                }
+            }
+            .navigationTitle(store.appLanguage.text(en: "Change photo scene", zh: "更改照片场景"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(store.appLanguage.text(en: "Cancel", zh: "取消")) {
+                        dismiss()
+                    }
+                }
+
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(store.appLanguage.text(en: "Done", zh: "完成")) {
+                        store.reclassifyRecognizedPhoto(
+                            photoID: photo.id,
+                            category: selectedCategory,
+                            scene: selectedScene
+                        )
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+
+    private func sceneTitle(_ scene: String) -> String {
+        switch scene {
+        case "Cafe ordering": store.appLanguage.text(en: "Cafe ordering", zh: "咖啡点单")
+        case "Transport signs": store.appLanguage.text(en: "Transport signs", zh: "交通标识")
+        case "Clinic and pharmacy": store.appLanguage.text(en: "Clinic and pharmacy", zh: "看病药房")
+        case "Supermarket shopping": store.appLanguage.text(en: "Supermarket shopping", zh: "超市购物")
+        case "Housing and bills": store.appLanguage.text(en: "Housing and bills", zh: "租房账单")
+        case "Work note": store.appLanguage.text(en: "Work note", zh: "工作记录")
+        default: scene
+        }
     }
 }
 

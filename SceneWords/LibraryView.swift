@@ -322,7 +322,7 @@ private struct WordSelectionRow: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(word.text)
                         .font(.headline)
-                    Text(word.meaning)
+                    Text(word.meaningText(store.appLanguage))
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }

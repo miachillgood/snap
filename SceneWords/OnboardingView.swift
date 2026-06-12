@@ -319,7 +319,6 @@ struct OnboardingView: View {
         CalibrationResultView(
             language: store.appLanguage,
             scenes: SceneVocabularyScene.all,
-            knownWords: knownWords,
             result: calibrationResult,
             useLevelAction: finishOnboarding,
             retakeAction: retakeCalibration
@@ -416,22 +415,42 @@ struct OnboardingView: View {
         var categoryScores: [WordCategory: Int] = [:]
 
         for scene in scenes {
-            categoryScores[scene.category, default: 0] += scene.words.filter { knownWords.contains($0) }.count
+            categoryScores[scene.category] = weightedScore(for: scene.words)
         }
 
         return CalibrationResult(
-            totalKnownCount: knownWords.count,
-            totalWordCount: totalCalibrationWordCount,
+            totalKnownCount: weightedReadinessScore,
+            totalWordCount: 100,
             sceneScores: categoryScores
         )
     }
 
     private var inferredLevel: EnglishLevel {
-        calibrationResult.inferredLevel
+        readinessBand.englishLevel
     }
 
     private var totalCalibrationWordCount: Int {
         SceneVocabularyScene.all.reduce(0) { $0 + $1.words.count }
+    }
+
+    private var weightedReadinessScore: Int {
+        weightedScore(for: SceneVocabularyScene.all.flatMap(\.words))
+    }
+
+    private var readinessBand: ReadinessBand {
+        ReadinessBand(score: weightedReadinessScore)
+    }
+
+    private func weightedScore(for words: [LevelProbeWord]) -> Int {
+        let totalDifficulty = words.reduce(0) { $0 + $1.difficulty }
+        guard totalDifficulty > 0 else { return 0 }
+
+        let knownDifficulty = words
+            .filter { knownWords.contains($0) }
+            .reduce(0) { $0 + $1.difficulty }
+
+        let score = Int((Double(knownDifficulty) / Double(totalDifficulty) * 100).rounded())
+        return min(100, max(0, score))
     }
 
     private var knownWordsSummaryTitle: String {
@@ -486,7 +505,7 @@ struct OnboardingView: View {
         store.completeOnboarding(
             level: inferredLevel,
             goal: .realLife,
-            calibrationScore: knownWords.count,
+            calibrationScore: weightedReadinessScore,
             calibratedAt: Date(),
             sceneCalibrationScores: calibrationResult.sceneScores,
             hidesKnownWords: hidesKnownWords,
@@ -562,7 +581,14 @@ private struct SceneVocabularyScene {
     let words: [LevelProbeWord]
 
     var category: WordCategory {
-        words.first?.category ?? .dailyLife
+        switch title {
+        case "ORDERING": .food
+        case "TRAFFIC": .transport
+        case "SHOPPING": .dailyLife
+        case "HOUSING": .work
+        case "MEDICAL": .medical
+        default: .dailyLife
+        }
     }
 
     static let ordering = SceneVocabularyScene(
@@ -753,7 +779,6 @@ private enum OnboardingPreviewKnownWords {
 private struct CalibrationResultView: View {
     let language: AppLanguage
     let scenes: [SceneVocabularyScene]
-    let knownWords: Set<LevelProbeWord>
     let result: CalibrationResult
     let useLevelAction: () -> Void
     let retakeAction: () -> Void
@@ -762,17 +787,69 @@ private struct CalibrationResultView: View {
         scenes.map { scene in
             SceneCalibrationSummary(
                 scene: scene,
-                knownCount: scene.words.filter { knownWords.contains($0) }.count
+                readinessScore: result.sceneScores[scene.category] ?? 0
             )
         }
     }
 
-    private var strongestScene: SceneCalibrationSummary? {
-        sceneResults.max { $0.knownCount < $1.knownCount }
+    private var readinessBand: ReadinessBand {
+        ReadinessBand(score: result.totalKnownCount)
     }
 
-    private var practiceScene: SceneCalibrationSummary? {
-        sceneResults.min { $0.knownCount < $1.knownCount }
+    private var hasRecognizedScenes: Bool {
+        sceneResults.contains { $0.readinessScore > 0 }
+    }
+
+    private var strongSceneNames: [String] {
+        let recognizedScenes = sceneResults.filter { $0.readinessScore > 0 }
+        guard !recognizedScenes.isEmpty else {
+            return [language.text(en: "daily basics", zh: "基础生活词")]
+        }
+
+        return recognizedScenes
+            .sorted {
+                if $0.readinessScore == $1.readinessScore {
+                    return $0.scene.sceneNumber < $1.scene.sceneNumber
+                }
+                return $0.readinessScore > $1.readinessScore
+            }
+            .prefix(3)
+            .map { $0.shortTitle(language) }
+    }
+
+    private var supportSceneNames: [String] {
+        guard hasRecognizedScenes else {
+            return [
+                language.text(en: "housing", zh: "租房"),
+                language.text(en: "clinic visits", zh: "看病"),
+                language.text(en: "bills", zh: "账单")
+            ]
+        }
+
+        let supportScenes = sceneResults
+            .sorted {
+                if $0.readinessScore == $1.readinessScore {
+                    return $0.scene.sceneNumber < $1.scene.sceneNumber
+                }
+                return $0.readinessScore < $1.readinessScore
+            }
+            .prefix(2)
+            .sorted { $0.supportDisplayOrder < $1.supportDisplayOrder }
+
+        var names = supportScenes.map { $0.supportTitle(language) }
+        if supportScenes.contains(where: { $0.scene.title == "HOUSING" }) {
+            names.append(language.text(en: "bills", zh: "账单"))
+        }
+
+        return names
+    }
+
+    private var familiarSceneText: String {
+        joinedList(strongSceneNames)
+    }
+
+    private var supportSceneText: String {
+        joinedList(supportSceneNames)
     }
 
     var body: some View {
@@ -781,8 +858,9 @@ private struct CalibrationResultView: View {
                 VStack(spacing: 18) {
                     header
                     scoreCard
-                    sceneBarsCard
-                    impactCard
+                    sceneInsightCard
+                    adaptationCopy
+                    personalizationCards
                 }
                 .padding(.horizontal, 22)
                 .padding(.top, 18)
@@ -803,12 +881,12 @@ private struct CalibrationResultView: View {
                 .background(.white.opacity(0.74), in: Circle())
                 .shadow(color: .black.opacity(0.08), radius: 14, y: 8)
 
-            Text(language.text(en: "Your Scene English Level", zh: "你的生活场景英语水平"))
+            Text(language.text(en: "Personalized Word Filter Ready", zh: "个性化识词设置完成"))
                 .font(.system(size: 24, weight: .bold, design: .serif))
                 .foregroundStyle(.black.opacity(0.88))
                 .multilineTextAlignment(.center)
 
-            Text(language.text(en: "This is not an exam score. It helps SeenWords hide words that are already too easy for you.", zh: "这不是正式考试分数，它会帮助 SeenWords 少推荐你已经会的简单词。"))
+            Text(language.text(en: "SeenWords has estimated which real-life words are still worth surfacing from your photos.", zh: "SeenWords 已经估算出之后拍照时，哪些生活词更值得优先推荐给你。"))
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(.black.opacity(0.52))
                 .multilineTextAlignment(.center)
@@ -831,7 +909,7 @@ private struct CalibrationResultView: View {
                     VStack(spacing: 2) {
                         Text("\(result.totalKnownCount)")
                             .font(.system(size: 28, weight: .black, design: .rounded))
-                        Text("/ \(result.totalWordCount)")
+                        Text("/ 100")
                             .font(.caption.weight(.bold))
                             .foregroundStyle(.secondary)
                     }
@@ -839,41 +917,35 @@ private struct CalibrationResultView: View {
                 .frame(width: 104, height: 104)
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(result.inferredLevel.title(language))
-                        .font(.system(size: 28, weight: .bold, design: .serif))
-                        .foregroundStyle(.black.opacity(0.9))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.76)
+                    Text(language.text(en: "Scene Readiness Score", zh: "生活场景适应度"))
+                        .font(.caption.weight(.black))
+                        .foregroundStyle(Color.brandPurple)
+                        .textCase(.uppercase)
 
-                    Text(levelDescription)
+                    Text(language.text(en: "Level: \(readinessBand.title(language))", zh: "等级：\(readinessBand.title(language))"))
+                        .font(.system(size: 24, weight: .bold, design: .serif))
+                        .foregroundStyle(.black.opacity(0.9))
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Text(readinessBand.description(language))
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-
-                    HStack(spacing: 8) {
-                        if let strongestScene {
-                            CalibrationMiniPill(
-                                icon: "sparkles",
-                                text: language.text(en: "Strong in \(strongestScene.shortTitle(language))", zh: "\(strongestScene.shortTitle(language)) 较熟")
-                            )
-                        }
-                    }
                 }
 
                 Spacer(minLength: 0)
             }
 
-            if let practiceScene {
-                Divider()
-                HStack(spacing: 10) {
-                    Image(systemName: "scope")
-                        .foregroundStyle(Color.mainWarning)
-                    Text(language.text(en: "Next best focus: \(practiceScene.shortTitle(language))", zh: "接下来最值得练：\(practiceScene.shortTitle(language))"))
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.black.opacity(0.74))
-                        .lineLimit(2)
-                    Spacer()
-                }
+            Divider()
+
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "info.circle.fill")
+                    .foregroundStyle(Color.brandPurple.opacity(0.78))
+                Text(language.text(en: "Estimated from 100 real-life scene words and word difficulty. This is not an official English exam score.", zh: "基于 100 个真实生活场景词和词的难度估算，不是正式英语考试。"))
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.black.opacity(0.56))
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
             }
         }
         .padding(18)
@@ -884,48 +956,97 @@ private struct CalibrationResultView: View {
         }
     }
 
-    private var sceneBarsCard: some View {
+    private var sceneInsightCard: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(language.text(en: "Scene familiarity", zh: "五个场景熟悉度"))
-                .font(.headline.weight(.bold))
+            Text(language.text(en: "What SeenWords learned", zh: "SeenWords 了解到的情况"))
+                .font(.headline.bold())
+                .foregroundStyle(.black.opacity(0.86))
 
-            VStack(spacing: 13) {
-                ForEach(sceneResults) { summary in
-                    CalibrationSceneScoreRow(summary: summary, language: language)
-                }
+            ReadinessTagGroup(
+                icon: "sparkles",
+                title: language.text(en: "You seem comfortable with", zh: "你比较熟悉"),
+                tags: strongSceneNames,
+                color: Color.mainAction
+            )
+
+            ReadinessTagGroup(
+                icon: "scope",
+                title: language.text(en: "SeenWords will watch more carefully", zh: "SeenWords 会更留意"),
+                tags: supportSceneNames,
+                color: Color.mainWarning
+            )
+        }
+        .padding(18)
+        .background(.white.opacity(0.72), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+    }
+
+    private var adaptationCopy: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(primaryInsightText)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.black.opacity(0.78))
+                .lineSpacing(3)
+
+            Text(language.text(en: "After this, SeenWords will use your level and familiar areas to show fewer basic words you probably know, and more words that are useful in the current photo but more likely to be new for you.", zh: "之后 SeenWords 会根据你的水平和熟悉领域，少推荐你大概率已经认识的基础词，多帮你抓出照片里那些你可能真的不认识、但当前场景很有用的词。"))
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.black.opacity(0.55))
+                .lineSpacing(3)
+        }
+        .padding(18)
+        .background(Color.brandPurple.opacity(0.08), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+    }
+
+    private var primaryInsightText: String {
+        if hasRecognizedScenes {
+            return language.text(
+                en: "You can already handle common \(familiarSceneText) scenes; in denser moments like \(supportSceneText), you may still meet more unfamiliar words.",
+                zh: "你已经能应对常见的\(familiarSceneText)场景；在\(supportSceneText)这类信息密度更高的场景里，可能还会遇到更多陌生词。"
+            )
+        }
+
+        return language.text(
+            en: "You are starting from clear daily-life basics; in denser moments like \(supportSceneText), SeenWords will filter more carefully.",
+            zh: "你会先从清晰常见的生活词开始；在\(supportSceneText)这类信息密度更高的场景里，SeenWords 会更谨慎帮你筛词。"
+        )
+    }
+
+    private var personalizationCards: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(language.text(en: "How your scans get smarter", zh: "接下来识词会怎么变聪明"))
+                .font(.headline.bold())
+                .foregroundStyle(.black.opacity(0.86))
+
+            VStack(spacing: 10) {
+                PersonalizationStepCard(
+                    icon: "eye.slash.fill",
+                    title: language.text(en: "Show fewer basic words", zh: "少显示基础词"),
+                    detail: language.text(en: "Hide words you are very likely to already know.", zh: "隐藏你大概率已认识的词。"),
+                    color: Color.brandPurple
+                )
+
+                PersonalizationStepCard(
+                    icon: "sparkles",
+                    title: language.text(en: "Prioritize unfamiliar words", zh: "优先抓陌生词"),
+                    detail: language.text(en: "Recommend useful photo words that are more likely to be new for you.", zh: "推荐照片里更可能不认识但有用的词。"),
+                    color: Color.mainAction
+                )
+
+                PersonalizationStepCard(
+                    icon: "exclamationmark.shield.fill",
+                    title: language.text(en: "Be careful in high-pressure scenes", zh: "更留意高压力场景"),
+                    detail: language.text(en: "Housing, medical, and bill-related photos will be filtered more cautiously.", zh: "租房、医疗、账单类照片会更谨慎筛词。"),
+                    color: Color.mainWarning
+                )
             }
         }
         .padding(18)
         .background(.white.opacity(0.72), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
     }
 
-    private var impactCard: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "camera.viewfinder")
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(Color.brandPurple)
-                .frame(width: 42, height: 42)
-                .background(Color.brandPurple.opacity(0.1), in: Circle())
-
-            VStack(alignment: .leading, spacing: 5) {
-                Text(language.text(en: "How this changes your photos", zh: "这会怎样影响拍照推荐"))
-                    .font(.subheadline.weight(.bold))
-                Text(language.text(en: "Future scans will down-rank the basic words you already know and surface scene words you are more likely to need.", zh: "之后拍照时，会更少显示你已经会的基础词，优先推荐你更可能需要的场景词。"))
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-                    .lineSpacing(2)
-            }
-
-            Spacer(minLength: 0)
-        }
-        .padding(16)
-        .background(Color.brandPurple.opacity(0.08), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-    }
-
     private var footerButtons: some View {
         VStack(spacing: 10) {
             Button(action: useLevelAction) {
-                Text(language.text(en: "Use This Level", zh: "使用这个水平"))
+                Text(language.text(en: "Start Personalized Scanning", zh: "开始个性化识词"))
                     .font(.system(size: 16, weight: .bold))
                     .foregroundStyle(Color(red: 0.96, green: 0.86, blue: 0.52))
                     .frame(maxWidth: .infinity)
@@ -954,101 +1075,184 @@ private struct CalibrationResultView: View {
         return CGFloat(result.totalKnownCount) / CGFloat(result.totalWordCount)
     }
 
-    private var levelDescription: String {
-        switch result.inferredLevel {
-        case .gettingStarted:
-            language.text(en: "You are still collecting daily-life basics.", zh: "你正在积累生活英语基础词。")
-        case .everyday:
-            language.text(en: "You can handle many everyday scenes.", zh: "你已经能应对不少日常场景。")
-        case .working:
-            language.text(en: "You know many practical words for work and errands.", zh: "你认识不少工作和办事会用到的词。")
-        case .confident:
-            language.text(en: "Most basic scene words can stay out of your way.", zh: "多数基础场景词可以先帮你隐藏。")
+    private func joinedList(_ items: [String]) -> String {
+        guard !items.isEmpty else {
+            return language.text(en: "daily life", zh: "日常生活")
         }
+
+        if language == .simplifiedChinese {
+            return items.joined(separator: "、")
+        }
+
+        return ListFormatter.localizedString(byJoining: items)
     }
 }
 
 private struct SceneCalibrationSummary: Identifiable {
     let scene: SceneVocabularyScene
-    let knownCount: Int
+    let readinessScore: Int
 
     var id: String { scene.sceneNumber }
-    var totalCount: Int { scene.words.count }
     var ratio: CGFloat {
-        guard totalCount > 0 else { return 0 }
-        return CGFloat(knownCount) / CGFloat(totalCount)
+        CGFloat(readinessScore) / 100
     }
 
     func shortTitle(_ language: AppLanguage) -> String {
         switch scene.title {
-        case "ORDERING": language.text(en: "Cafe", zh: "点单")
-        case "TRAFFIC": language.text(en: "Transport", zh: "交通")
-        case "SHOPPING": language.text(en: "Shopping", zh: "超市")
+        case "ORDERING": language.text(en: "ordering", zh: "点单")
+        case "TRAFFIC": language.text(en: "transport", zh: "交通")
+        case "SHOPPING": language.text(en: "shopping", zh: "购物")
         case "HOUSING": language.text(en: "Housing", zh: "租房")
-        case "MEDICAL": language.text(en: "Medical", zh: "看病")
+        case "MEDICAL": language.text(en: "medical visits", zh: "看病")
         default: scene.title.capitalized
         }
     }
 
-    func fullTitle(_ language: AppLanguage) -> String {
+    func supportTitle(_ language: AppLanguage) -> String {
         switch scene.title {
-        case "ORDERING": language.text(en: "Cafe ordering", zh: "咖啡点单")
-        case "TRAFFIC": language.text(en: "Transport signs", zh: "交通路牌")
-        case "SHOPPING": language.text(en: "Supermarket", zh: "超市购物")
-        case "HOUSING": language.text(en: "Housing and utilities", zh: "租房家居")
-        case "MEDICAL": language.text(en: "Clinic and pharmacy", zh: "看病药房")
-        default: scene.title.capitalized
+        case "ORDERING": language.text(en: "ordering details", zh: "点单细节")
+        case "TRAFFIC": language.text(en: "transport signs", zh: "交通标识")
+        case "SHOPPING": language.text(en: "shopping labels", zh: "购物标签")
+        case "HOUSING": language.text(en: "housing", zh: "租房")
+        case "MEDICAL": language.text(en: "clinic visits", zh: "看病")
+        default: shortTitle(language)
         }
     }
 
-    var symbol: String {
+    var supportDisplayOrder: Int {
         switch scene.title {
-        case "ORDERING": "cup.and.saucer.fill"
-        case "TRAFFIC": "tram.fill"
-        case "SHOPPING": "basket.fill"
-        case "HOUSING": "house.fill"
-        case "MEDICAL": "cross.case.fill"
-        default: scene.category.icon
+        case "HOUSING": 0
+        case "MEDICAL": 1
+        case "SHOPPING": 2
+        case "TRAFFIC": 3
+        case "ORDERING": 4
+        default: 5
         }
     }
 }
 
-private struct CalibrationSceneScoreRow: View {
-    let summary: SceneCalibrationSummary
-    let language: AppLanguage
+private struct ReadinessBand {
+    let score: Int
+
+    var englishLevel: EnglishLevel {
+        switch score {
+        case 0...29: .gettingStarted
+        case 30...74: .everyday
+        case 75...89: .working
+        default: .confident
+        }
+    }
+
+    func title(_ language: AppLanguage) -> String {
+        switch score {
+        case 0...29:
+            language.text(en: "Getting Started", zh: "刚开始")
+        case 30...54:
+            language.text(en: "Daily Basics", zh: "生活入门")
+        case 55...74:
+            language.text(en: "Everyday-ready", zh: "日常可用")
+        case 75...89:
+            language.text(en: "Independent Living", zh: "独立生活")
+        default:
+            language.text(en: "Pretty Confident", zh: "比较自信")
+        }
+    }
+
+    func description(_ language: AppLanguage) -> String {
+        switch score {
+        case 0...29:
+            language.text(en: "Start with clear, common words from everyday photos.", zh: "先从照片里清晰、常见的生活词开始。")
+        case 30...54:
+            language.text(en: "You have a base for daily errands, with many useful scene words still worth surfacing.", zh: "你有日常办事的基础，仍有不少场景词值得优先看见。")
+        case 55...74:
+            language.text(en: "You can handle many common scenes; denser real-life details still deserve attention.", zh: "你能应对不少常见场景，信息更密的生活细节仍值得留意。")
+        case 75...89:
+            language.text(en: "You can navigate most practical scenes, so SeenWords will be more selective.", zh: "你能处理大多数实用场景，SeenWords 会筛得更精。")
+        default:
+            language.text(en: "Basic scene words can mostly stay hidden while photos surface sharper gaps.", zh: "基础场景词大多可以隐藏，照片会帮你抓更细的盲点。")
+        }
+    }
+}
+
+private struct ReadinessTagGroup: View {
+    let icon: String
+    let title: String
+    let tags: [String]
+    let color: Color
+
+    private var columns: [GridItem] {
+        [GridItem(.adaptive(minimum: 88), spacing: 8)]
+    }
 
     var body: some View {
-        VStack(spacing: 7) {
-            HStack(spacing: 10) {
-                Image(systemName: summary.symbol)
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
                     .font(.caption.weight(.bold))
-                    .foregroundStyle(summary.scene.highlightColor)
-                    .frame(width: 28, height: 28)
-                    .background(summary.scene.highlightColor.opacity(0.12), in: Circle())
+                    .foregroundStyle(color)
+                    .frame(width: 24, height: 24)
+                    .background(color.opacity(0.12), in: Circle())
 
-                Text(summary.fullTitle(language))
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.black.opacity(0.78))
-
-                Spacer()
-
-                Text("\(summary.knownCount)/\(summary.totalCount)")
-                    .font(.caption.weight(.black))
-                    .foregroundStyle(.black.opacity(0.58))
+                Text(title)
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.black.opacity(0.72))
             }
 
-            GeometryReader { proxy in
-                ZStack(alignment: .leading) {
-                    Capsule()
-                        .fill(Color.black.opacity(0.07))
-
-                    Capsule()
-                        .fill(summary.scene.highlightColor)
-                        .frame(width: proxy.size.width * summary.ratio)
+            LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
+                ForEach(tags, id: \.self) { tag in
+                    ReadinessTagChip(text: tag, color: color)
                 }
             }
-            .frame(height: 9)
         }
+    }
+}
+
+private struct ReadinessTagChip: View {
+    let text: String
+    let color: Color
+
+    var body: some View {
+        Text(text)
+            .font(.caption.weight(.black))
+            .foregroundStyle(color)
+            .lineLimit(1)
+            .minimumScaleFactor(0.74)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(color.opacity(0.1), in: Capsule())
+    }
+}
+
+private struct PersonalizationStepCard: View {
+    let icon: String
+    let title: String
+    let detail: String
+    let color: Color
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: icon)
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(.white)
+                .frame(width: 34, height: 34)
+                .background(color, in: Circle())
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.black.opacity(0.82))
+                Text(detail)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.black.opacity(0.54))
+                    .lineSpacing(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(13)
+        .background(.white.opacity(0.64), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 }
 
@@ -1065,6 +1269,45 @@ private struct CalibrationMiniPill: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
             .background(Color.brandPurple.opacity(0.1), in: Capsule())
+    }
+}
+
+private struct CalibrationSceneScoreRow: View {
+    let summary: SceneCalibrationSummary
+    let language: AppLanguage
+
+    var body: some View {
+        VStack(spacing: 7) {
+            HStack(spacing: 10) {
+                Image(systemName: summary.scene.category.icon)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(summary.scene.highlightColor)
+                    .frame(width: 28, height: 28)
+                    .background(summary.scene.highlightColor.opacity(0.12), in: Circle())
+
+                Text(summary.shortTitle(language))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.black.opacity(0.78))
+
+                Spacer()
+
+                Text("\(summary.readinessScore)%")
+                    .font(.caption.weight(.black))
+                    .foregroundStyle(.black.opacity(0.58))
+            }
+
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.black.opacity(0.07))
+
+                    Capsule()
+                        .fill(summary.scene.highlightColor)
+                        .frame(width: proxy.size.width * summary.ratio)
+                }
+            }
+            .frame(height: 9)
+        }
     }
 }
 
