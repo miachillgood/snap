@@ -2,7 +2,7 @@ import SwiftUI
 
 struct PacksView: View {
     @EnvironmentObject private var store: WordStore
-    @State private var selectedFilter = PackFilter.discover
+    @State private var selectedFilter = PackFilter.mine
     @State private var searchText = ""
     @State private var isShowingPackCreator = false
 
@@ -15,9 +15,10 @@ struct PacksView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 16) {
                 header
                 searchField
+                modeSwitcher
                 feedHeader
 
                 if visiblePackCount == 0 {
@@ -37,7 +38,7 @@ struct PacksView: View {
             .padding(.bottom, 84)
         }
         .background(Color.softBackground)
-        .navigationTitle(store.appLanguage.text(en: "Packs", zh: "词包"))
+        .navigationTitle(store.appLanguage.text(en: "Word sets", zh: "场景词包"))
         .sheet(isPresented: $isShowingPackCreator) {
             PackCreatorView()
                 .environmentObject(store)
@@ -45,44 +46,47 @@ struct PacksView: View {
     }
 
     private var header: some View {
-        HStack(alignment: .top, spacing: 16) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(store.appLanguage.text(en: "Packs", zh: "词包"))
-                    .font(.largeTitle.bold())
-                Text(store.appLanguage.text(en: "Find real-scene word sets.", zh: "发现真实场景里的单词组。"))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer(minLength: 12)
-
-            Button {
-                withAnimation(.snappy(duration: 0.22)) {
-                    selectedFilter = selectedFilter == .mine ? .discover : .mine
-                }
-            } label: {
-                Label(
-                    selectedFilter == .mine
-                        ? store.appLanguage.text(en: "Discover", zh: "发现")
-                        : store.appLanguage.text(en: "My packs", zh: "我的"),
-                    systemImage: selectedFilter == .mine ? "sparkles" : "folder"
-                )
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(Color.mainAccent)
-                .lineLimit(1)
-                .padding(.horizontal, 11)
-                .padding(.vertical, 8)
-                .background(Color.mainAccent.opacity(0.1), in: Capsule())
-            }
-            .buttonStyle(.plain)
-        }
+        Text(store.appLanguage.text(en: "Saved from your photos, plus useful sets shared from real scenes.", zh: "从你的照片沉淀单词，也可以学习别人分享的真实场景词组。"))
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.top, 2)
     }
+
+    private var modeSwitcher: some View {
+        HStack(spacing: 6) {
+            ForEach(PackFilter.allCases) { filter in
+                Button {
+                    withAnimation(.snappy(duration: 0.22)) {
+                        selectedFilter = filter
+                    }
+                } label: {
+                    Label(filter.shortTitle(store.appLanguage), systemImage: filter.icon)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.86)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .foregroundStyle(selectedFilter == filter ? .white : .secondary)
+                        .background(
+                            selectedFilter == filter ? filter.tint : Color.clear,
+                            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        )
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(selectedFilter == filter ? .isSelected : [])
+            }
+        }
+        .padding(4)
+        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+
 
     private var searchField: some View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
-            TextField(store.appLanguage.text(en: "Search packs", zh: "搜索词包"), text: $searchText)
+            TextField(selectedFilter.searchPlaceholder(store.appLanguage), text: $searchText)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
             if !searchText.isEmpty {
@@ -103,9 +107,9 @@ struct PacksView: View {
     private var feedHeader: some View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(selectedFilter.title(store.appLanguage))
+                Text(selectedFilter.feedTitle(store.appLanguage))
                     .font(.headline)
-                Text(feedSubtitle)
+                Text(selectedFilter.feedSubtitle(store.appLanguage))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -116,7 +120,7 @@ struct PacksView: View {
                 Button {
                     isShowingPackCreator = true
                 } label: {
-                    Label(store.appLanguage.text(en: "Create", zh: "新建"), systemImage: "plus")
+                    Label(store.appLanguage.text(en: "New", zh: "新建"), systemImage: "plus")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(Color.mainAction)
                         .padding(.horizontal, 11)
@@ -128,23 +132,14 @@ struct PacksView: View {
         }
     }
 
-    private var feedSubtitle: String {
-        switch selectedFilter {
-        case .discover:
-            store.appLanguage.text(en: "Public packs from real scenes", zh: "来自真实场景的公开词包")
-        case .mine:
-            store.appLanguage.text(en: "Create and manage your own packs", zh: "创建和管理自己的词包")
-        }
-    }
-
     private var emptyState: some View {
         VStack(spacing: 10) {
             Image(systemName: "square.stack.3d.up.slash")
                 .font(.system(size: 30, weight: .semibold))
                 .foregroundStyle(Color.mainAccent)
-            Text(store.appLanguage.text(en: "No packs found", zh: "没有找到词包"))
+            Text(selectedFilter.emptyTitle(store.appLanguage))
                 .font(.headline)
-            Text(store.appLanguage.text(en: "Try another keyword or clear the current view.", zh: "换一个关键词，或者清空当前筛选。"))
+            Text(selectedFilter.emptySubtitle(store.appLanguage))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -581,15 +576,64 @@ private struct FlowWordsPreview: View {
 }
 
 private enum PackFilter: String, CaseIterable, Identifiable {
-    case discover
     case mine
+    case discover
 
     var id: String { rawValue }
 
-    func title(_ language: AppLanguage) -> String {
+    var icon: String {
         switch self {
-        case .discover: language.text(en: "Discover", zh: "发现")
-        case .mine: language.text(en: "My packs", zh: "我的词包")
+        case .mine: "photo.on.rectangle"
+        case .discover: "person.2.fill"
+        }
+    }
+
+    var tint: Color {
+        switch self {
+        case .mine: .mainAction
+        case .discover: .mainAccent
+        }
+    }
+
+    func shortTitle(_ language: AppLanguage) -> String {
+        switch self {
+        case .mine: language.text(en: "My photos", zh: "我的照片")
+        case .discover: language.text(en: "Shared", zh: "别人分享")
+        }
+    }
+
+    func feedTitle(_ language: AppLanguage) -> String {
+        switch self {
+        case .mine: language.text(en: "From your photos", zh: "来自你的照片")
+        case .discover: language.text(en: "Shared real scenes", zh: "大家分享的场景")
+        }
+    }
+
+    func feedSubtitle(_ language: AppLanguage) -> String {
+        switch self {
+        case .mine: language.text(en: "Word sets you created or saved.", zh: "你创建或保存下来的单词组。")
+        case .discover: language.text(en: "Useful sets from other learners.", zh: "其他学习者分享的实用单词组。")
+        }
+    }
+
+    func searchPlaceholder(_ language: AppLanguage) -> String {
+        switch self {
+        case .mine: language.text(en: "Search your word sets", zh: "搜索你的单词组")
+        case .discover: language.text(en: "Search shared scenes", zh: "搜索分享场景")
+        }
+    }
+
+    func emptyTitle(_ language: AppLanguage) -> String {
+        switch self {
+        case .mine: language.text(en: "No saved word sets yet", zh: "还没有保存的单词组")
+        case .discover: language.text(en: "No shared sets found", zh: "没有找到分享的单词组")
+        }
+    }
+
+    func emptySubtitle(_ language: AppLanguage) -> String {
+        switch self {
+        case .mine: language.text(en: "Create one from the words you choose after a photo scan.", zh: "拍照识词后，把选中的单词保存成一组。")
+        case .discover: language.text(en: "Try another keyword or clear the search.", zh: "换一个关键词，或者清空搜索。")
         }
     }
 

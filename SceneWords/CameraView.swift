@@ -13,6 +13,7 @@ struct CameraView: View {
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var isShowingCamera = false
     @State private var isShowingPhotoLibrary = false
+    @State private var isShowingManualSearch = false
     @State private var isProcessingPhoto = false
     @State private var showsCameraUnavailable = false
     @State private var capturedPhotoForSelection: ScenePhoto?
@@ -25,6 +26,7 @@ struct CameraView: View {
                     readinessCaptureTip
                 }
                 captureLensCard
+                manualSearchEntry
                 photoHistory
             }
             .padding(20)
@@ -47,6 +49,10 @@ struct CameraView: View {
                     openPhotoLibraryAfterCamera()
                 }
             )
+        }
+        .sheet(isPresented: $isShowingManualSearch) {
+            ManualWordSearchView()
+                .environmentObject(store)
         }
         .photosPicker(isPresented: $isShowingPhotoLibrary, selection: $selectedPhotoItem, matching: .images)
         .navigationDestination(item: $capturedPhotoForSelection) { photo in
@@ -244,6 +250,39 @@ struct CameraView: View {
         .frame(height: 318)
         .padding(18)
         .background(.background, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+    }
+
+    private var manualSearchEntry: some View {
+        Button {
+            isShowingManualSearch = true
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "magnifyingglass")
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 42, height: 42)
+                    .background(Color.mainAction, in: Circle())
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(store.appLanguage.text(en: "Search a word", zh: "搜索单词"))
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                    Text(store.appLanguage.text(en: "Add one word without taking a photo.", zh: "不用拍照，也可以把一个词加入词库。"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+
+                Spacer(minLength: 8)
+
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(16)
+            .background(.background, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        }
+        .buttonStyle(.plain)
     }
 
     private var photoHistory: some View {
@@ -715,6 +754,231 @@ private struct SelectionEmptyState: View {
     }
 }
 
+private struct ManualWordSearchView: View {
+    @EnvironmentObject private var store: WordStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var searchText = ""
+    @State private var submittedQuery = ""
+    @State private var selectedCategory: WordCategory = .dailyLife
+    @State private var savedWord: VocabularyWord?
+    @State private var isReviewingSavedWord = false
+    @State private var lastSpokenText: String?
+    @StateObject private var speechPlayer = WordSpeechPlayer()
+
+    private var lookupWord: VocabularyWord? {
+        store.manualWordLookup(for: submittedQuery, category: selectedCategory)
+    }
+
+    private var canSearch: Bool {
+        !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    header
+                    searchField
+
+                    if let lookupWord {
+                        categorySelector
+                        WordConfirmationDetailCard(
+                            word: lookupWord,
+                            photo: nil,
+                            onSpeak: {
+                                speechPlayer.speak(lookupWord.text, language: store.appLanguage)
+                            }
+                        )
+                        saveActions(for: lookupWord)
+                    } else {
+                        suggestionCard
+                    }
+                }
+                .padding(20)
+                .padding(.bottom, 32)
+            }
+            .background(Color.softBackground)
+            .navigationTitle(store.appLanguage.text(en: "Search word", zh: "搜索单词"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button(store.appLanguage.text(en: "Close", zh: "关闭")) {
+                        dismiss()
+                    }
+                }
+            }
+            .navigationDestination(isPresented: $isReviewingSavedWord) {
+                if let savedWord {
+                    LightReviewSessionView(words: [savedWord], title: store.appLanguage.text(en: "Manual search", zh: "手动搜索"))
+                }
+            }
+            .onAppear {
+                selectedCategory = store.selectedCategory
+            }
+            .onChange(of: lookupWord?.text) { _, _ in
+                speakLookupWordIfNeeded()
+            }
+        }
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(store.appLanguage.text(en: "Look up one word", zh: "查一个单词"))
+                .font(.largeTitle.bold())
+                .lineLimit(2)
+                .minimumScaleFactor(0.72)
+            Text(store.appLanguage.text(en: "For the words you meet without a photo.", zh: "适合那些你遇到了、但不需要拍照的词。"))
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            TextField(store.appLanguage.text(en: "Type an English word", zh: "输入英文单词"), text: $searchText)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .submitLabel(.search)
+                .onSubmit(submitLookup)
+
+            Button {
+                submitLookup()
+            } label: {
+                Image(systemName: "arrow.right.circle.fill")
+                    .font(.title3)
+                    .foregroundStyle(canSearch ? Color.mainAccent : Color.secondary.opacity(0.5))
+            }
+            .disabled(!canSearch)
+            .accessibilityLabel(store.appLanguage.text(en: "Search", zh: "搜索"))
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 13)
+        .background(.background, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+
+    private var categorySelector: some View {
+        Menu {
+            ForEach(WordCategory.allCases) { category in
+                Button {
+                    selectedCategory = category
+                    savedWord = nil
+                } label: {
+                    Label(category.title(store.appLanguage), systemImage: category.icon)
+                }
+            }
+        } label: {
+            HStack(spacing: 10) {
+                CategoryBadge(category: selectedCategory)
+                Text(store.appLanguage.text(en: "Change category", zh: "更改分类"))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                Spacer()
+                Image(systemName: "chevron.down")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(14)
+            .background(.background, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var suggestionCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(store.appLanguage.text(en: "Try a real-life word", zh: "试试生活场景词"))
+                .font(.headline)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 94), spacing: 8)], alignment: .leading, spacing: 8) {
+                ForEach(store.manualSearchSuggestions, id: \.self) { suggestion in
+                    Button {
+                        searchText = suggestion
+                        submitLookup()
+                    } label: {
+                        WordChip(text: suggestion, color: Color.mainAction)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(16)
+        .background(.background, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+    }
+
+    private func saveActions(for word: VocabularyWord) -> some View {
+        VStack(spacing: 12) {
+            if savedWord != nil {
+                HStack(spacing: 10) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(Color.mainAction)
+                    Text(store.appLanguage.text(en: "Saved to your review words", zh: "已加入你的复习词库"))
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                }
+                .padding(14)
+                .background(Color.mainAction.opacity(0.1), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+
+                Button {
+                    isReviewingSavedWord = true
+                } label: {
+                    Label(store.appLanguage.text(en: "Review this word", zh: "复习这个词"), systemImage: "brain.head.profile")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .tint(.mainAccent)
+
+                Button {
+                    searchText = ""
+                    submittedQuery = ""
+                    self.savedWord = nil
+                    lastSpokenText = nil
+                } label: {
+                    Text(store.appLanguage.text(en: "Search another word", zh: "继续搜索"))
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+            } else {
+                Button {
+                    savedWord = store.saveManualSearchedWord(word)
+                } label: {
+                    Label(store.appLanguage.text(en: "Add to my words", zh: "加入我的词库"), systemImage: "tray.and.arrow.down.fill")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .tint(.mainAccent)
+            }
+        }
+    }
+
+    private func submitLookup() {
+        let cleanQuery = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanQuery.isEmpty else { return }
+
+        if let inferredWord = store.manualWordLookup(for: cleanQuery) {
+            selectedCategory = inferredWord.category
+        }
+
+        submittedQuery = cleanQuery
+        savedWord = nil
+        lastSpokenText = nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+            speakLookupWordIfNeeded()
+        }
+    }
+
+    private func speakLookupWordIfNeeded() {
+        guard let word = lookupWord, lastSpokenText != word.text else { return }
+        lastSpokenText = word.text
+        speechPlayer.speak(word.text, language: store.appLanguage)
+    }
+}
+
 private struct StoryProgressBar: View {
     let totalCount: Int
     let currentIndex: Int
@@ -1047,12 +1311,16 @@ private struct RemovedWord {
 private struct WordConfirmationDetailCard: View {
     @EnvironmentObject private var store: WordStore
     let word: VocabularyWord
-    let photo: ScenePhoto
+    let photo: ScenePhoto?
     let onSpeak: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            ScenePhotoImage(photo: photo, height: 190, cornerRadius: 22)
+            if let photo {
+                ScenePhotoImage(photo: photo, height: 190, cornerRadius: 22)
+            } else {
+                ManualWordScenePlaceholder(word: word)
+            }
 
             HStack {
                 CategoryBadge(category: word.category)
@@ -1098,6 +1366,30 @@ private struct WordConfirmationDetailCard: View {
         }
         .padding(16)
         .background(.background, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+    }
+}
+
+private struct ManualWordScenePlaceholder: View {
+    @EnvironmentObject private var store: WordStore
+    let word: VocabularyWord
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "magnifyingglass.circle.fill")
+                .font(.system(size: 46, weight: .semibold))
+                .foregroundStyle(word.category.color)
+            Text(store.appLanguage.text(en: "Manual word search", zh: "手动搜索单词"))
+                .font(.headline)
+            Text(word.sourceSceneText(store.appLanguage))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(word.category.color)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(word.category.color.opacity(0.1), in: Capsule())
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 190)
+        .background(word.category.color.opacity(0.08), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 }
 

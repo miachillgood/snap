@@ -841,13 +841,7 @@ private struct LightReviewWordCard: View {
     let word: VocabularyWord
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            if let photo = store.sourcePhoto(for: word) {
-                ScenePhotoImage(photo: photo, height: 220, cornerRadius: 22)
-            } else {
-                MenuPhotoMock(compact: false, revealedChipCount: 2, largeHeight: 220)
-            }
-
+        VStack(alignment: .leading, spacing: 22) {
             HStack {
                 CategoryBadge(category: word.category)
                 Spacer()
@@ -858,9 +852,65 @@ private struct LightReviewWordCard: View {
                     .padding(.vertical, 7)
                     .background(Color.mainAccent.opacity(0.1), in: Capsule())
             }
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text(word.text)
+                    .font(.system(size: 44, weight: .heavy, design: .rounded))
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.7)
+
+                Text(word.meaningText(store.appLanguage))
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(Color.mainAccent)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            VStack(alignment: .leading, spacing: 14) {
+                LightReviewDetailBlock(
+                    title: store.appLanguage.text(en: "You saw", zh: "你看到的是"),
+                    value: word.contextLine,
+                    color: word.category.color,
+                    symbol: "text.viewfinder"
+                )
+
+                LightReviewDetailBlock(
+                    title: store.appLanguage.text(en: "Use it like this", zh: "可以这样用"),
+                    value: word.nextUseText(store.appLanguage),
+                    color: Color.mainAccent,
+                    symbol: "quote.bubble.fill"
+                )
+            }
         }
-        .padding(16)
+        .padding(20)
         .background(.background, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+    }
+}
+
+private struct LightReviewDetailBlock: View {
+    let title: String
+    let value: String
+    let color: Color
+    let symbol: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: symbol)
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(color)
+                .frame(width: 34, height: 34)
+                .background(color.opacity(0.12), in: Circle())
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text(title)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.secondary)
+                Text(value)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 }
 

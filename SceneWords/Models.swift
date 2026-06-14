@@ -665,6 +665,12 @@ final class WordStore: ObservableObject {
         }
     }
 
+    static let manualSearchScene = "Manual search"
+
+    var manualSearchSuggestions: [String] {
+        ["receipt", "refund", "aisle", "lease", "symptom", "platform"]
+    }
+
     var selectedWords: [VocabularyWord] {
         scannedWords.filter(\.isSelected)
     }
@@ -847,6 +853,69 @@ final class WordStore: ObservableObject {
         saveCustomWords()
         resetReviewSession()
         return scannedWords.filter { savedKeys.contains($0.storageKey) || keptKeys.contains($0.storageKey) }
+    }
+
+    func manualWordLookup(for rawQuery: String, category selectedCategory: WordCategory? = nil) -> VocabularyWord? {
+        let cleanQuery = rawQuery.cleanedRecognizedWord.normalizedVocabularyKey
+        guard !cleanQuery.isEmpty else { return nil }
+
+        let lexiconWord = bestLexiconMatch(for: cleanQuery)
+        let probeWord = SampleData.levelProbeWords.first {
+            $0.text.normalizedVocabularyKey == cleanQuery
+        }
+        let category = selectedCategory ?? lexiconWord?.category ?? probeWord?.category ?? inferredManualCategory(for: cleanQuery)
+        let displayText = lexiconWord?.text ?? probeWord?.text ?? cleanQuery
+        let lexiconMeaning = lexiconWord.flatMap { $0.meaning.nonEmpty }
+        let probeMeaning = probeWord.flatMap { $0.translation.nonEmpty }
+        let meaning = lexiconMeaning ?? probeMeaning ?? VocabularyWord.pendingMeaning
+        let note = lexiconWord?.note ?? "Added from manual word search."
+        let nextUse = lexiconWord?.nextUse ?? "Use it when this word comes up in daily life."
+
+        return VocabularyWord(
+            text: displayText,
+            meaning: meaning,
+            note: note,
+            sourceScene: Self.manualSearchScene,
+            contextLine: "Manual search: \(displayText)",
+            nextUse: nextUse,
+            category: category,
+            group: lexiconWord?.group == .phrases ? .phrases : .recommended,
+            isSelected: false,
+            isKnown: false,
+            memoryStrength: (lexiconWord != nil || probeWord != nil) ? 2 : 1,
+            reviewCount: 0,
+            nextReview: "today",
+            sourcePhotoID: nil,
+            encounteredAt: Date(),
+            isUserGenerated: true
+        )
+    }
+
+    @discardableResult
+    func saveManualSearchedWord(_ word: VocabularyWord) -> VocabularyWord {
+        var savedWord = word
+        savedWord.isSelected = true
+        savedWord.isKnown = false
+        savedWord.sourcePhotoID = nil
+        savedWord.encounteredAt = Date()
+        savedWord.isUserGenerated = true
+
+        if let index = scannedWords.firstIndex(where: { $0.storageKey == savedWord.storageKey }) {
+            scannedWords[index].isSelected = true
+            scannedWords[index].isKnown = false
+            scannedWords[index].encounteredAt = savedWord.encounteredAt
+            scannedWords[index].memoryStrength = max(scannedWords[index].memoryStrength, savedWord.memoryStrength)
+            savedWord = scannedWords[index]
+        } else {
+            scannedWords.append(savedWord)
+        }
+
+        selectedCategory = savedWord.category
+        selectedScene = savedWord.sourceScene
+        lightReviewWords = [savedWord]
+        saveCustomWords()
+        resetReviewSession()
+        return savedWord
     }
 
     func markKnown(_ word: VocabularyWord) {
@@ -1180,6 +1249,10 @@ final class WordStore: ObservableObject {
     }
 
     func sourcePhoto(for word: VocabularyWord) -> ScenePhoto? {
+        if word.sourceScene == Self.manualSearchScene {
+            return nil
+        }
+
         if let sourcePhotoID = word.sourcePhotoID,
            let photo = photos.first(where: { $0.id == sourcePhotoID }) {
             return photo
@@ -1303,6 +1376,27 @@ final class WordStore: ObservableObject {
 
     private func isReviewCandidate(_ word: VocabularyWord, reviewableOnly: Bool) -> Bool {
         word.group != .hidden && (!reviewableOnly || !word.isKnown)
+    }
+
+    private func bestLexiconMatch(for normalizedText: String) -> VocabularyWord? {
+        let matches = scannedWords.filter { $0.text.normalizedVocabularyKey == normalizedText }
+        return matches.first { $0.group != .hidden && $0.sourceScene == Self.manualSearchScene }
+            ?? matches.first { $0.group != .hidden }
+            ?? matches.first
+    }
+
+    private func inferredManualCategory(for normalizedText: String) -> WordCategory {
+        let keywordCategories: [(WordCategory, [String])] = [
+            (.food, ["menu", "coffee", "latte", "surcharge", "dine", "takeaway", "spicy", "portion", "refill"]),
+            (.transport, ["platform", "route", "fare", "ticket", "parking", "permit", "tow", "departure", "arrival", "terminal"]),
+            (.medical, ["clinic", "pharmacy", "prescription", "medicine", "dose", "tablet", "symptom", "fever", "allergy"]),
+            (.dailyLife, ["receipt", "refund", "exchange", "aisle", "checkout", "discount", "clearance", "expiry", "parcel"]),
+            (.work, ["rent", "lease", "bond", "landlord", "tenant", "shift", "roster", "timesheet", "utilities"])
+        ]
+
+        return keywordCategories.first { _, keywords in
+            keywords.contains { normalizedText.contains($0) }
+        }?.0 ?? selectedCategory
     }
 
     private func category(for pack: SharedPack) -> WordCategory {

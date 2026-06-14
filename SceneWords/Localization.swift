@@ -169,6 +169,7 @@ extension VocabularyWord {
         case "Parking sign": language.text(en: "Parking sign", zh: "停车标识")
         case "Clinic form": language.text(en: "Clinic form", zh: "诊所表格")
         case "Supermarket label": language.text(en: "Supermarket label", zh: "超市标签")
+        case "Manual search": language.text(en: "Manual search", zh: "手动搜索")
         default: sourceScene
         }
     }
