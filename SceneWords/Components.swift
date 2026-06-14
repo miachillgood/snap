@@ -2,6 +2,98 @@ import AVFoundation
 import SwiftUI
 import UIKit
 
+struct ScenePaperBackground: View {
+    var body: some View {
+        ZStack {
+            LinearGradient(
+                colors: [
+                    Color.softBackground,
+                    Color(red: 1.0, green: 0.985, blue: 0.94)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+
+            Canvas { context, size in
+                let spacing: CGFloat = 18
+                let dotSize: CGFloat = 1.7
+                let dotColor = Color.primary.opacity(0.045)
+
+                for x in stride(from: spacing / 2, through: size.width, by: spacing) {
+                    for y in stride(from: spacing / 2, through: size.height, by: spacing) {
+                        let rect = CGRect(
+                            x: x - dotSize / 2,
+                            y: y - dotSize / 2,
+                            width: dotSize,
+                            height: dotSize
+                        )
+                        context.fill(Path(ellipseIn: rect), with: .color(dotColor))
+                    }
+                }
+            }
+
+            LinearGradient(
+                colors: [
+                    Color.white.opacity(0.36),
+                    Color.clear,
+                    Color.paletteCream.opacity(0.16)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
+    }
+}
+
+private struct PaperPanelModifier: ViewModifier {
+    let cornerRadius: CGFloat
+    let shadowOpacity: Double
+
+    func body(content: Content) -> some View {
+        content
+            .background(
+                Color(uiColor: .systemBackground).opacity(0.88),
+                in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(Color.white.opacity(0.72), lineWidth: 1)
+            }
+            .shadow(color: Color.black.opacity(shadowOpacity), radius: 18, y: 10)
+    }
+}
+
+private struct StickerSurfaceModifier: ViewModifier {
+    let cornerRadius: CGFloat
+    let rotation: Double
+
+    func body(content: Content) -> some View {
+        content
+            .background(
+                Color(uiColor: .systemBackground).opacity(0.96),
+                in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(Color.white.opacity(0.9), lineWidth: 1.2)
+            }
+            .shadow(color: Color.black.opacity(0.14), radius: 14, y: 8)
+            .rotationEffect(.degrees(rotation))
+    }
+}
+
+extension View {
+    func paperPanel(cornerRadius: CGFloat = 22, shadowOpacity: Double = 0.05) -> some View {
+        modifier(PaperPanelModifier(cornerRadius: cornerRadius, shadowOpacity: shadowOpacity))
+    }
+
+    func stickerSurface(cornerRadius: CGFloat = 14, rotation: Double = 0) -> some View {
+        modifier(StickerSurfaceModifier(cornerRadius: cornerRadius, rotation: rotation))
+    }
+}
+
 struct CategoryBadge: View {
     @EnvironmentObject private var store: WordStore
     let category: WordCategory

@@ -32,7 +32,7 @@ struct CameraView: View {
             .padding(20)
             .padding(.bottom, 84)
         }
-        .background(Color.softBackground)
+        .background(ScenePaperBackground())
         .navigationTitle(store.appLanguage.text(en: "Capture", zh: "拍照"))
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $isEditingCategory) {
@@ -187,69 +187,80 @@ struct CameraView: View {
 
     private var captureLensCard: some View {
         let takePhotoTitle = store.appLanguage.text(en: "Take a photo", zh: "拍照")
-        let helperText = store.appLanguage.text(en: "Capture what you see", zh: "拍下你看见的东西")
+        let helperText = store.appLanguage.text(en: "Your photo becomes a word card.", zh: "拍下场景，变成你的词卡。")
         let savedCountText = store.appLanguage.text(en: "\(store.photos.count) saved", zh: "已保存 \(store.photos.count) 张")
 
-        return VStack(spacing: 0) {
-            Spacer(minLength: 10)
+        return VStack(alignment: .leading, spacing: 18) {
+            HStack(alignment: .top, spacing: 14) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(store.appLanguage.text(en: "Capture from real life", zh: "从真实生活里识词"))
+                        .font(.title2.bold())
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.78)
+                    Text(helperText)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer(minLength: 8)
+
+                Text(savedCountText)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(Color.mainAction)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .background(Color.mainAction.opacity(0.1), in: Capsule())
+            }
+
+            ZStack(alignment: .bottomTrailing) {
+                MenuPhotoMock(
+                    compact: false,
+                    revealedChipCount: scanStage == .ready ? 4 : revealedChipCount,
+                    isScanning: scanStage != .ready || isProcessingPhoto,
+                    largeHeight: 212
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .padding(10)
+                .stickerSurface(cornerRadius: 16, rotation: -2.4)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 4)
+
+                VStack(alignment: .trailing, spacing: 8) {
+                    MiniExtractedWordSticker(
+                        title: "receipt",
+                        subtitle: store.appLanguage.text(en: "receipt", zh: "收据"),
+                        color: .mainAccent
+                    )
+                    MiniExtractedWordSticker(
+                        title: "surcharge",
+                        subtitle: store.appLanguage.text(en: "extra charge", zh: "附加费"),
+                        color: .mainWarning
+                    )
+                }
+                .padding(.trailing, 2)
+                .padding(.bottom, 8)
+            }
+            .frame(maxWidth: .infinity)
+
+            if isProcessingPhoto || scanStage != .ready {
+                captureStatus
+            }
 
             Button {
                 openCamera()
             } label: {
-                ZStack {
-                    Circle()
-                        .fill(Color.mainAccent.opacity(0.1))
-                        .frame(width: 178, height: 178)
-
-                    Circle()
-                        .stroke(Color.mainAccent.opacity(0.18), lineWidth: 18)
-                        .frame(width: 142, height: 142)
-
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [Color.mainAccent, Color(red: 0.55, green: 0.42, blue: 0.98)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .frame(width: 112, height: 112)
-                        .shadow(color: Color.mainAccent.opacity(0.28), radius: 20, y: 12)
-
-                    Image(systemName: "camera.viewfinder")
-                        .font(.system(size: 34, weight: .semibold))
-                        .foregroundStyle(.white)
-                }
-                .contentShape(Circle())
+                Label(takePhotoTitle, systemImage: "camera.viewfinder")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 3)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .tint(.mainAccent)
             .accessibilityLabel(takePhotoTitle)
-
-            if isProcessingPhoto || scanStage != .ready {
-                captureStatus
-                    .padding(.top, 18)
-                    .padding(.horizontal, 20)
-            } else {
-                Text(helperText)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.top, 18)
-            }
-
-            Spacer(minLength: 18)
-
-            HStack {
-                Spacer()
-
-                Text(savedCountText)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-            }
         }
-        .frame(maxWidth: .infinity)
-        .frame(height: 318)
         .padding(18)
-        .background(.background, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .paperPanel(cornerRadius: 24, shadowOpacity: 0.06)
     }
 
     private var manualSearchEntry: some View {
@@ -280,7 +291,7 @@ struct CameraView: View {
                     .foregroundStyle(.secondary)
             }
             .padding(16)
-            .background(.background, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .paperPanel(cornerRadius: 22, shadowOpacity: 0.04)
         }
         .buttonStyle(.plain)
     }
@@ -301,7 +312,7 @@ struct CameraView: View {
                 }
                 .frame(maxWidth: .infinity)
                 .padding(24)
-                .background(.background, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                .paperPanel(cornerRadius: 22, shadowOpacity: 0.04)
             } else {
                 ForEach(store.photoDaySections) { section in
                     PhotoHistoryDayCard(section: section)
@@ -433,7 +444,7 @@ struct CameraView: View {
         }
         .buttonStyle(.plain)
         .padding(14)
-        .background(.background, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .paperPanel(cornerRadius: 18, shadowOpacity: 0.035)
     }
 
     private var profileContextTitle: String {
@@ -523,6 +534,33 @@ private struct ActionTile: View {
     }
 }
 
+private struct MiniExtractedWordSticker: View {
+    let title: String
+    let subtitle: String
+    let color: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.caption.weight(.heavy))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+            Text(subtitle)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(color)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(Color(uiColor: .systemBackground).opacity(0.96), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.white.opacity(0.86), lineWidth: 1)
+        }
+        .shadow(color: Color.black.opacity(0.12), radius: 9, y: 5)
+    }
+}
+
 private enum ScanStage {
     case reading
     case outlining
@@ -579,7 +617,7 @@ struct CapturedWordsSelectionView: View {
             .padding(20)
             .padding(.bottom, 92)
         }
-        .background(Color.softBackground)
+        .background(ScenePaperBackground())
         .navigationTitle(store.appLanguage.text(en: "Choose words", zh: "选择单词"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)
@@ -750,7 +788,7 @@ private struct SelectionEmptyState: View {
         }
         .frame(maxWidth: .infinity)
         .padding(24)
-        .background(.background, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .paperPanel(cornerRadius: 22, shadowOpacity: 0.035)
     }
 }
 
@@ -797,7 +835,7 @@ private struct ManualWordSearchView: View {
                 .padding(20)
                 .padding(.bottom, 32)
             }
-            .background(Color.softBackground)
+            .background(ScenePaperBackground())
             .navigationTitle(store.appLanguage.text(en: "Search word", zh: "搜索单词"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -855,7 +893,7 @@ private struct ManualWordSearchView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 13)
-        .background(.background, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .paperPanel(cornerRadius: 18, shadowOpacity: 0.035)
     }
 
     private var categorySelector: some View {
@@ -880,7 +918,7 @@ private struct ManualWordSearchView: View {
                     .foregroundStyle(.secondary)
             }
             .padding(14)
-            .background(.background, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .paperPanel(cornerRadius: 18, shadowOpacity: 0.035)
         }
         .buttonStyle(.plain)
     }
@@ -902,7 +940,7 @@ private struct ManualWordSearchView: View {
             }
         }
         .padding(16)
-        .background(.background, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .paperPanel(cornerRadius: 22, shadowOpacity: 0.04)
     }
 
     private func saveActions(for word: VocabularyWord) -> some View {
@@ -1057,7 +1095,7 @@ struct WordConfirmationFlowView: View {
             .padding(20)
             .padding(.bottom, 84)
         }
-        .background(Color.softBackground)
+        .background(ScenePaperBackground())
         .navigationTitle(store.appLanguage.text(en: "Confirm words", zh: "确认单词"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)
@@ -1169,7 +1207,7 @@ struct WordConfirmationFlowView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(18)
-        .background(.background, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .paperPanel(cornerRadius: 26, shadowOpacity: 0.05)
     }
 
     private var summaryActions: some View {
@@ -1318,8 +1356,12 @@ private struct WordConfirmationDetailCard: View {
         VStack(alignment: .leading, spacing: 16) {
             if let photo {
                 ScenePhotoImage(photo: photo, height: 190, cornerRadius: 22)
+                    .padding(8)
+                    .stickerSurface(cornerRadius: 18, rotation: -1.4)
             } else {
                 ManualWordScenePlaceholder(word: word)
+                    .padding(8)
+                    .stickerSurface(cornerRadius: 18, rotation: -1.4)
             }
 
             HStack {
@@ -1365,7 +1407,7 @@ private struct WordConfirmationDetailCard: View {
             }
         }
         .padding(16)
-        .background(.background, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .paperPanel(cornerRadius: 24, shadowOpacity: 0.06)
     }
 }
 

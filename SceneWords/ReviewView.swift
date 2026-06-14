@@ -16,7 +16,7 @@ struct ReviewView: View {
             .padding(20)
             .padding(.bottom, 84)
         }
-        .background(Color.softBackground)
+        .background(ScenePaperBackground())
         .navigationTitle(store.appLanguage.text(en: "Review", zh: "复习"))
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -26,6 +26,9 @@ struct ReviewView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text(store.appLanguage.text(en: "Review what you actually saw", zh: "复习你真实遇见过的词"))
                     .font(.title2.bold())
+                Text(store.appLanguage.text(en: "Words stay tied to the day and scene where you met them.", zh: "单词会跟你遇见它的日期和场景连在一起。"))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
             }
 
             HStack(spacing: 10) {
@@ -50,7 +53,7 @@ struct ReviewView: View {
             }
         }
         .padding(16)
-        .background(.background, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .paperPanel(cornerRadius: 22, shadowOpacity: 0.04)
     }
 
     private var reviewRouteSection: some View {
@@ -147,7 +150,7 @@ struct LightReviewSessionView: View {
             .padding(20)
             .padding(.bottom, 84)
         }
-        .background(Color.softBackground)
+        .background(ScenePaperBackground())
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)
@@ -178,7 +181,7 @@ struct LightReviewSessionView: View {
                 .tint(.mainAccent)
         }
         .padding(16)
-        .background(.background, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .paperPanel(cornerRadius: 20, shadowOpacity: 0.035)
     }
 
     private var sessionActions: some View {
@@ -477,7 +480,7 @@ private struct ReviewDayRow: View {
                 .foregroundStyle(.secondary)
         }
         .padding(14)
-        .background(.background, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .paperPanel(cornerRadius: 22, shadowOpacity: 0.035)
     }
 
     private var dayTitle: String {
@@ -538,7 +541,7 @@ private struct ReviewPackRow: View {
                 .foregroundStyle(.secondary)
         }
         .padding(16)
-        .background(.background, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .paperPanel(cornerRadius: 22, shadowOpacity: 0.035)
     }
 }
 
@@ -581,7 +584,7 @@ private struct ReviewCategoryRow: View {
                 .foregroundStyle(.secondary)
         }
         .padding(16)
-        .background(.background, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .paperPanel(cornerRadius: 22, shadowOpacity: 0.035)
     }
 }
 
@@ -700,7 +703,7 @@ private struct ReviewHeatmapCard: View {
             }
         }
         .padding(16)
-        .background(.background, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .paperPanel(cornerRadius: 22, shadowOpacity: 0.035)
         .onChange(of: range) { _, _ in
             withAnimation(.snappy(duration: 0.22)) {
                 pageOffset = 0
@@ -911,6 +914,8 @@ private struct LightReviewWordCard: View {
                     .foregroundStyle(Color.mainAccent)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            .padding(18)
+            .stickerSurface(cornerRadius: 18, rotation: -1.2)
 
             VStack(alignment: .leading, spacing: 14) {
                 LightReviewDetailBlock(
@@ -929,7 +934,7 @@ private struct LightReviewWordCard: View {
             }
         }
         .padding(20)
-        .background(.background, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .paperPanel(cornerRadius: 24, shadowOpacity: 0.07)
     }
 }
 
@@ -1001,7 +1006,7 @@ private struct LightReviewCompleteView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(18)
-        .background(.background, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .paperPanel(cornerRadius: 26, shadowOpacity: 0.05)
     }
 }
 
@@ -1032,7 +1037,7 @@ struct ReviewEmptyState: View {
         }
         .frame(maxWidth: .infinity)
         .padding(24)
-        .background(.background, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .paperPanel(cornerRadius: 22, shadowOpacity: 0.035)
     }
 }
 
