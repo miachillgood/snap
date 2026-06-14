@@ -1857,6 +1857,72 @@ extension VocabularyWord {
             ? language.text(en: "Meaning to add", zh: "待补充释义")
             : meaning
     }
+
+    var phoneticText: String {
+        let key = text.normalizedVocabularyKey
+        let phonetics: [String: String] = [
+            "aisle": "/aɪl/",
+            "allergy": "/ˈælədʒi/",
+            "appointment": "/əˈpɔɪntmənt/",
+            "arrival": "/əˈraɪvəl/",
+            "basket": "/ˈbɑːskɪt/",
+            "bill": "/bɪl/",
+            "bond": "/bɒnd/",
+            "cabinet food": "/ˈkæbɪnət fuːd/",
+            "capsule": "/ˈkæpsjuːl/",
+            "checkout": "/ˈtʃekaʊt/",
+            "clearance": "/ˈklɪərəns/",
+            "clinic": "/ˈklɪnɪk/",
+            "cough": "/kɒf/",
+            "decaf": "/ˈdiːkæf/",
+            "departure": "/dɪˈpɑːtʃə/",
+            "discount": "/ˈdɪskaʊnt/",
+            "dose": "/dəʊs/",
+            "dizzy": "/ˈdɪzi/",
+            "exchange": "/ɪksˈtʃeɪndʒ/",
+            "expiry": "/ɪkˈspaɪəri/",
+            "fare": "/feə/",
+            "fever": "/ˈfiːvə/",
+            "gluten-free": "/ˌɡluːtən ˈfriː/",
+            "ingredient": "/ɪnˈɡriːdiənt/",
+            "inspection": "/ɪnˈspekʃən/",
+            "landlord": "/ˈlændlɔːd/",
+            "lease": "/liːs/",
+            "loading zone": "/ˈləʊdɪŋ zəʊn/",
+            "loyalty points": "/ˈlɔɪəlti pɔɪnts/",
+            "maintenance": "/ˈmeɪntənəns/",
+            "medicine": "/ˈmedɪsɪn/",
+            "mould": "/məʊld/",
+            "nausea": "/ˈnɔːziə/",
+            "nutrition": "/njuːˈtrɪʃən/",
+            "organic": "/ɔːˈɡænɪk/",
+            "perishable": "/ˈperɪʃəbəl/",
+            "permit": "/ˈpɜːmɪt/",
+            "pharmacy": "/ˈfɑːməsi/",
+            "platform": "/ˈplætfɔːm/",
+            "prescription": "/prɪˈskrɪpʃən/",
+            "receipt": "/rɪˈsiːt/",
+            "redeem": "/rɪˈdiːm/",
+            "referral": "/rɪˈfɜːrəl/",
+            "refund": "/ˈriːfʌnd/",
+            "rent": "/rent/",
+            "route": "/ruːt/",
+            "shelf": "/ʃelf/",
+            "side effect": "/ˈsaɪd ɪˌfekt/",
+            "sore throat": "/ˌsɔː ˈθrəʊt/",
+            "surcharge": "/ˈsɜːtʃɑːdʒ/",
+            "symptom": "/ˈsɪmptəm/",
+            "tablet": "/ˈtæblət/",
+            "tenant": "/ˈtenənt/",
+            "terminal": "/ˈtɜːmɪnəl/",
+            "timetable": "/ˈtaɪmˌteɪbəl/",
+            "tow-away": "/ˈtəʊ əˌweɪ/",
+            "transfer": "/trænsˈfɜː/",
+            "utilities": "/juːˈtɪlɪtiz/"
+        ]
+
+        return phonetics[key] ?? "/\(key)/"
+    }
 }
 
 private extension UIImage {

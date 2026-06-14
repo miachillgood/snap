@@ -1,3 +1,4 @@
+import AVFoundation
 import SwiftUI
 import UIKit
 
@@ -93,6 +94,34 @@ struct SectionHeader: View {
                 Button(actionTitle, action: onAction)
                     .font(.subheadline.weight(.semibold))
             }
+        }
+    }
+}
+
+final class WordSpeechPlayer: ObservableObject {
+    private let synthesizer = AVSpeechSynthesizer()
+
+    func speak(_ text: String, language: AppLanguage) {
+        if synthesizer.isSpeaking {
+            synthesizer.stopSpeaking(at: .immediate)
+        }
+
+        let utterance = AVSpeechUtterance(string: text)
+        utterance.voice = AVSpeechSynthesisVoice(language: voiceIdentifier(for: language))
+        utterance.rate = 0.46
+        synthesizer.speak(utterance)
+    }
+
+    private func voiceIdentifier(for language: AppLanguage) -> String {
+        switch language {
+        case .simplifiedChinese, .english:
+            return "en-US"
+        case .japanese:
+            return "ja-JP"
+        case .korean:
+            return "ko-KR"
+        case .spanish:
+            return "es-ES"
         }
     }
 }

@@ -113,6 +113,8 @@ struct LightReviewSessionView: View {
     @State private var recognizedCount = 0
     @State private var needsAnotherLookCount = 0
     @State private var skippedCount = 0
+    @State private var lastSpokenKey: String?
+    @StateObject private var speechPlayer = WordSpeechPlayer()
 
     private var isComplete: Bool {
         !words.isEmpty && currentIndex >= words.count
@@ -133,7 +135,12 @@ struct LightReviewSessionView: View {
                     )
                 } else {
                     sessionHeader
-                    LightReviewWordCard(word: words[currentIndex])
+                    LightReviewWordCard(
+                        word: words[currentIndex],
+                        onSpeak: {
+                            speechPlayer.speak(words[currentIndex].text, language: store.appLanguage)
+                        }
+                    )
                     sessionActions
                 }
             }
@@ -146,6 +153,10 @@ struct LightReviewSessionView: View {
         .toolbar(.hidden, for: .tabBar)
         .onAppear {
             store.startLightReview(words: words)
+            speakCurrentWord()
+        }
+        .onChange(of: currentIndex) { _, _ in
+            speakCurrentWord()
         }
     }
 
@@ -219,6 +230,16 @@ struct LightReviewSessionView: View {
         skippedCount += 1
         withAnimation(.snappy) {
             currentIndex += 1
+        }
+    }
+
+    private func speakCurrentWord() {
+        guard words.indices.contains(currentIndex), !isComplete else { return }
+        let word = words[currentIndex]
+        guard lastSpokenKey != word.storageKey else { return }
+        lastSpokenKey = word.storageKey
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+            speechPlayer.speak(word.text, language: store.appLanguage)
         }
     }
 }
@@ -839,6 +860,7 @@ private struct ReviewCalendarDayCell: View {
 private struct LightReviewWordCard: View {
     @EnvironmentObject private var store: WordStore
     let word: VocabularyWord
+    let onSpeak: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
@@ -854,11 +876,35 @@ private struct LightReviewWordCard: View {
             }
 
             VStack(alignment: .leading, spacing: 10) {
-                Text(word.text)
-                    .font(.system(size: 44, weight: .heavy, design: .rounded))
-                    .foregroundStyle(.primary)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.7)
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 7) {
+                        Text(word.text)
+                            .font(.system(size: 44, weight: .heavy, design: .rounded))
+                            .foregroundStyle(.primary)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.7)
+
+                        Text(word.phoneticText)
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.82)
+                    }
+
+                    Spacer(minLength: 8)
+
+                    Button {
+                        onSpeak()
+                    } label: {
+                        Image(systemName: "speaker.wave.2.fill")
+                            .font(.headline.weight(.semibold))
+                            .foregroundStyle(Color.mainAccent)
+                            .frame(width: 42, height: 42)
+                            .background(Color.mainAccent.opacity(0.12), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(store.appLanguage.text(en: "Play pronunciation", zh: "播放发音"))
+                }
 
                 Text(word.meaningText(store.appLanguage))
                     .font(.title3.weight(.bold))
