@@ -13,16 +13,25 @@ struct CameraView: View {
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var isShowingCamera = false
     @State private var isShowingPhotoLibrary = false
-    @State private var isShowingManualSearch = false
     @State private var isProcessingPhoto = false
     @State private var showsCameraUnavailable = false
     @State private var capturedPhotoForSelection: ScenePhoto?
+    @State private var manualSearchText = ""
+    @State private var submittedManualQuery = ""
+    @State private var manualSearchCategory: WordCategory = .dailyLife
+    @State private var savedManualWord: VocabularyWord?
+    @State private var isReviewingManualWord = false
+    @State private var lastSpokenManualText: String?
+    @StateObject private var manualSpeechPlayer = WordSpeechPlayer()
     @AppStorage("didShowReadinessCaptureTip") private var didShowReadinessCaptureTip = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 manualSearchEntry
+                if let inlineManualLookupWord {
+                    inlineManualSearchResult(for: inlineManualLookupWord)
+                }
                 if shouldShowReadinessCaptureTip {
                     readinessCaptureTip
                 }
@@ -50,13 +59,20 @@ struct CameraView: View {
                 }
             )
         }
-        .sheet(isPresented: $isShowingManualSearch) {
-            ManualWordSearchView()
-                .environmentObject(store)
-        }
         .photosPicker(isPresented: $isShowingPhotoLibrary, selection: $selectedPhotoItem, matching: .images)
         .navigationDestination(item: $capturedPhotoForSelection) { photo in
             CapturedWordsSelectionView(photo: photo)
+        }
+        .navigationDestination(isPresented: $isReviewingManualWord) {
+            if let savedManualWord {
+                LightReviewSessionView(words: [savedManualWord], title: store.appLanguage.text(en: "Manual search", zh: "手动搜索"))
+            }
+        }
+        .onAppear {
+            manualSearchCategory = store.selectedCategory
+        }
+        .onChange(of: inlineManualLookupWord?.text) { _, _ in
+            speakInlineManualWordIfNeeded()
         }
         .onChange(of: selectedPhotoItem) { _, newItem in
             loadSelectedPhoto(newItem)
@@ -73,6 +89,14 @@ struct CameraView: View {
 
     private var shouldShowReadinessCaptureTip: Bool {
         !didShowReadinessCaptureTip && store.currentProfile.calibratedAt != nil
+    }
+
+    private var inlineManualLookupWord: VocabularyWord? {
+        store.manualWordLookup(for: submittedManualQuery, category: manualSearchCategory)
+    }
+
+    private var canSubmitManualSearch: Bool {
+        !manualSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private var readinessCaptureTip: some View {
@@ -260,28 +284,150 @@ struct CameraView: View {
     }
 
     private var manualSearchEntry: some View {
-        Button {
-            isShowingManualSearch = true
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .font(.headline.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            TextField(store.appLanguage.text(en: "Search a word", zh: "搜索单词"), text: $manualSearchText)
+                .font(.subheadline.weight(.semibold))
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .submitLabel(.search)
+                .onSubmit(submitInlineManualSearch)
+
+            Button {
+                submitInlineManualSearch()
+            } label: {
+                Text(store.appLanguage.text(en: "Search", zh: "搜索"))
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(canSubmitManualSearch ? Color.mainAccent : Color.secondary.opacity(0.55))
+            }
+            .disabled(!canSubmitManualSearch)
+            .accessibilityLabel(store.appLanguage.text(en: "Search", zh: "搜索"))
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 13)
+        .background(Color(uiColor: .systemBackground).opacity(0.9), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.primary.opacity(0.05), lineWidth: 1)
+        }
+    }
+
+    private func inlineManualSearchResult(for word: VocabularyWord) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            WordConfirmationDetailCard(
+                word: word,
+                photo: nil,
+                onSpeak: {
+                    manualSpeechPlayer.speak(word.text, language: store.appLanguage)
+                }
+            )
+
+            inlineManualCategorySelector
+            inlineManualSaveActions(for: word)
+        }
+    }
+
+    private var inlineManualCategorySelector: some View {
+        Menu {
+            ForEach(WordCategory.allCases) { category in
+                Button {
+                    manualSearchCategory = category
+                    savedManualWord = nil
+                } label: {
+                    Label(category.title(store.appLanguage), systemImage: category.icon)
+                }
+            }
         } label: {
             HStack(spacing: 10) {
-                Image(systemName: "magnifyingglass")
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(.secondary)
-
-                Text(store.appLanguage.text(en: "Search a word", zh: "搜索单词"))
+                CategoryBadge(category: manualSearchCategory)
+                Text(store.appLanguage.text(en: "Change category", zh: "更改分类"))
                     .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                Spacer()
+                Image(systemName: "chevron.down")
+                    .font(.caption.weight(.bold))
                     .foregroundStyle(.secondary)
-                Spacer(minLength: 8)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 13)
-            .background(Color(uiColor: .systemBackground).opacity(0.9), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(Color.primary.opacity(0.05), lineWidth: 1)
-            }
+            .padding(14)
+            .background(Color(uiColor: .systemBackground).opacity(0.72), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
         .buttonStyle(.plain)
+    }
+
+    private func inlineManualSaveActions(for word: VocabularyWord) -> some View {
+        VStack(spacing: 12) {
+            if savedManualWord != nil {
+                HStack(spacing: 10) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(Color.mainAction)
+                    Text(store.appLanguage.text(en: "Saved to your review words", zh: "已加入你的复习词库"))
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                }
+                .padding(14)
+                .background(Color.mainAction.opacity(0.1), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+
+                Button {
+                    isReviewingManualWord = true
+                } label: {
+                    Text(store.appLanguage.text(en: "Review this word", zh: "复习这个词"))
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .tint(.mainAccent)
+
+                Button {
+                    manualSearchText = ""
+                    submittedManualQuery = ""
+                    savedManualWord = nil
+                    lastSpokenManualText = nil
+                } label: {
+                    Text(store.appLanguage.text(en: "Search another word", zh: "继续搜索"))
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+            } else {
+                Button {
+                    savedManualWord = store.saveManualSearchedWord(word)
+                } label: {
+                    Text(store.appLanguage.text(en: "Add to my words", zh: "加入我的词库"))
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .tint(.mainAccent)
+            }
+        }
+    }
+
+    private func submitInlineManualSearch() {
+        let cleanQuery = manualSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanQuery.isEmpty else { return }
+
+        if let inferredWord = store.manualWordLookup(for: cleanQuery) {
+            manualSearchCategory = inferredWord.category
+        }
+
+        submittedManualQuery = cleanQuery
+        savedManualWord = nil
+        lastSpokenManualText = nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+            speakInlineManualWordIfNeeded()
+        }
+    }
+
+    private func speakInlineManualWordIfNeeded() {
+        guard let word = inlineManualLookupWord, lastSpokenManualText != word.text else { return }
+        lastSpokenManualText = word.text
+        manualSpeechPlayer.speak(word.text, language: store.appLanguage)
     }
 
     private var photoHistory: some View {
@@ -750,231 +896,6 @@ private struct SelectionEmptyState: View {
         .frame(maxWidth: .infinity)
         .padding(24)
         .paperPanel(cornerRadius: 22, shadowOpacity: 0.035)
-    }
-}
-
-private struct ManualWordSearchView: View {
-    @EnvironmentObject private var store: WordStore
-    @Environment(\.dismiss) private var dismiss
-    @State private var searchText = ""
-    @State private var submittedQuery = ""
-    @State private var selectedCategory: WordCategory = .dailyLife
-    @State private var savedWord: VocabularyWord?
-    @State private var isReviewingSavedWord = false
-    @State private var lastSpokenText: String?
-    @StateObject private var speechPlayer = WordSpeechPlayer()
-
-    private var lookupWord: VocabularyWord? {
-        store.manualWordLookup(for: submittedQuery, category: selectedCategory)
-    }
-
-    private var canSearch: Bool {
-        !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    header
-                    searchField
-
-                    if let lookupWord {
-                        categorySelector
-                        WordConfirmationDetailCard(
-                            word: lookupWord,
-                            photo: nil,
-                            onSpeak: {
-                                speechPlayer.speak(lookupWord.text, language: store.appLanguage)
-                            }
-                        )
-                        saveActions(for: lookupWord)
-                    } else {
-                        suggestionCard
-                    }
-                }
-                .padding(20)
-                .padding(.bottom, 32)
-            }
-            .background(ScenePaperBackground())
-            .navigationTitle(store.appLanguage.text(en: "Search word", zh: "搜索单词"))
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button(store.appLanguage.text(en: "Close", zh: "关闭")) {
-                        dismiss()
-                    }
-                }
-            }
-            .navigationDestination(isPresented: $isReviewingSavedWord) {
-                if let savedWord {
-                    LightReviewSessionView(words: [savedWord], title: store.appLanguage.text(en: "Manual search", zh: "手动搜索"))
-                }
-            }
-            .onAppear {
-                selectedCategory = store.selectedCategory
-            }
-            .onChange(of: lookupWord?.text) { _, _ in
-                speakLookupWordIfNeeded()
-            }
-        }
-    }
-
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(store.appLanguage.text(en: "Look up one word", zh: "查一个单词"))
-                .font(.largeTitle.bold())
-                .lineLimit(2)
-                .minimumScaleFactor(0.72)
-            Text(store.appLanguage.text(en: "For the words you meet without a photo.", zh: "适合那些你遇到了、但不需要拍照的词。"))
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    private var searchField: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "magnifyingglass")
-                .foregroundStyle(.secondary)
-            TextField(store.appLanguage.text(en: "Type an English word", zh: "输入英文单词"), text: $searchText)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .submitLabel(.search)
-                .onSubmit(submitLookup)
-
-            Button {
-                submitLookup()
-            } label: {
-                Image(systemName: "arrow.right.circle.fill")
-                    .font(.title3)
-                    .foregroundStyle(canSearch ? Color.mainAccent : Color.secondary.opacity(0.5))
-            }
-            .disabled(!canSearch)
-            .accessibilityLabel(store.appLanguage.text(en: "Search", zh: "搜索"))
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 13)
-        .paperPanel(cornerRadius: 18, shadowOpacity: 0.035)
-    }
-
-    private var categorySelector: some View {
-        Menu {
-            ForEach(WordCategory.allCases) { category in
-                Button {
-                    selectedCategory = category
-                    savedWord = nil
-                } label: {
-                    Label(category.title(store.appLanguage), systemImage: category.icon)
-                }
-            }
-        } label: {
-            HStack(spacing: 10) {
-                CategoryBadge(category: selectedCategory)
-                Text(store.appLanguage.text(en: "Change category", zh: "更改分类"))
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                Spacer()
-                Image(systemName: "chevron.down")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(.secondary)
-            }
-            .padding(14)
-            .paperPanel(cornerRadius: 18, shadowOpacity: 0.035)
-        }
-        .buttonStyle(.plain)
-    }
-
-    private var suggestionCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(store.appLanguage.text(en: "Try a real-life word", zh: "试试生活场景词"))
-                .font(.headline)
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 94), spacing: 8)], alignment: .leading, spacing: 8) {
-                ForEach(store.manualSearchSuggestions, id: \.self) { suggestion in
-                    Button {
-                        searchText = suggestion
-                        submitLookup()
-                    } label: {
-                        WordChip(text: suggestion, color: Color.mainAction)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
-        .padding(16)
-        .paperPanel(cornerRadius: 22, shadowOpacity: 0.04)
-    }
-
-    private func saveActions(for word: VocabularyWord) -> some View {
-        VStack(spacing: 12) {
-            if savedWord != nil {
-                HStack(spacing: 10) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(Color.mainAction)
-                    Text(store.appLanguage.text(en: "Saved to your review words", zh: "已加入你的复习词库"))
-                        .font(.subheadline.weight(.semibold))
-                    Spacer()
-                }
-                .padding(14)
-                .background(Color.mainAction.opacity(0.1), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-
-                Button {
-                    isReviewingSavedWord = true
-                } label: {
-                    Label(store.appLanguage.text(en: "Review this word", zh: "复习这个词"), systemImage: "brain.head.profile")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .tint(.mainAccent)
-
-                Button {
-                    searchText = ""
-                    submittedQuery = ""
-                    self.savedWord = nil
-                    lastSpokenText = nil
-                } label: {
-                    Text(store.appLanguage.text(en: "Search another word", zh: "继续搜索"))
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
-            } else {
-                Button {
-                    savedWord = store.saveManualSearchedWord(word)
-                } label: {
-                    Label(store.appLanguage.text(en: "Add to my words", zh: "加入我的词库"), systemImage: "tray.and.arrow.down.fill")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .tint(.mainAccent)
-            }
-        }
-    }
-
-    private func submitLookup() {
-        let cleanQuery = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleanQuery.isEmpty else { return }
-
-        if let inferredWord = store.manualWordLookup(for: cleanQuery) {
-            selectedCategory = inferredWord.category
-        }
-
-        submittedQuery = cleanQuery
-        savedWord = nil
-        lastSpokenText = nil
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
-            speakLookupWordIfNeeded()
-        }
-    }
-
-    private func speakLookupWordIfNeeded() {
-        guard let word = lookupWord, lastSpokenText != word.text else { return }
-        lastSpokenText = word.text
-        speechPlayer.speak(word.text, language: store.appLanguage)
     }
 }
 
