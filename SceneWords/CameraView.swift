@@ -211,46 +211,23 @@ struct CameraView: View {
 
     private var captureLensCard: some View {
         let takePhotoTitle = store.appLanguage.text(en: "Take a photo", zh: "拍照")
-        let helperText = store.appLanguage.text(en: "Scan a real-life word or sign.", zh: "扫描真实生活里的单词或标识。")
-        let savedCountText = store.appLanguage.text(en: "\(store.photos.count) saved", zh: "已保存 \(store.photos.count) 张")
 
-        return VStack(spacing: 20) {
-            HStack(alignment: .top, spacing: 14) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(store.appLanguage.text(en: "Capture from real life", zh: "从真实生活里识词"))
-                        .font(.title2.bold())
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.78)
-                    Text(helperText)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer(minLength: 8)
-
-                Text(savedCountText)
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(Color.mainAction)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 7)
-                    .background(Color.mainAction.opacity(0.1), in: Capsule())
-            }
-
+        return VStack(spacing: 14) {
             Button {
                 openCamera()
             } label: {
                 ZStack {
                     Circle()
                         .fill(Color.mainAccent.opacity(0.1))
-                        .frame(width: 164, height: 164)
+                        .frame(width: 156, height: 156)
 
                     Circle()
                         .stroke(Color.mainAccent.opacity(0.16), lineWidth: 16)
-                        .frame(width: 130, height: 130)
+                        .frame(width: 122, height: 122)
 
                     Circle()
                         .fill(Color.mainAccent)
-                        .frame(width: 96, height: 96)
+                        .frame(width: 90, height: 90)
                         .shadow(color: Color.mainAccent.opacity(0.24), radius: 18, y: 10)
 
                     Image(systemName: "viewfinder")
@@ -258,6 +235,8 @@ struct CameraView: View {
                         .foregroundStyle(.white)
                 }
                 .frame(maxWidth: .infinity)
+                .frame(height: 172)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel(takePhotoTitle)
@@ -265,21 +244,9 @@ struct CameraView: View {
             if isProcessingPhoto || scanStage != .ready {
                 captureStatus
             }
-
-            Button {
-                openCamera()
-            } label: {
-                Text(takePhotoTitle)
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 3)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .tint(.mainAccent)
-            .accessibilityLabel(takePhotoTitle)
         }
-        .padding(18)
+        .padding(.horizontal, 18)
+        .padding(.vertical, 16)
         .paperPanel(cornerRadius: 24, shadowOpacity: 0.06)
     }
 
