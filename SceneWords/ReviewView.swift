@@ -130,9 +130,7 @@ struct LightReviewSessionView: View {
                     EmptyReviewSessionView()
                 } else if isComplete {
                     LightReviewCompleteView(
-                        reviewedCount: recognizedCount + needsAnotherLookCount,
-                        recognizedCount: recognizedCount,
-                        needsAnotherLookCount: needsAnotherLookCount,
+                        keptCount: recognizedCount + needsAnotherLookCount,
                         skippedCount: skippedCount,
                         onDone: { dismiss() }
                     )
@@ -187,21 +185,25 @@ struct LightReviewSessionView: View {
     private var sessionActions: some View {
         HStack(spacing: 12) {
             Button {
-                advance(with: .needsAnotherLook)
+                skipCurrentWord()
             } label: {
-                Label(store.appLanguage.text(en: "Need review", zh: "还不熟"), systemImage: "arrow.counterclockwise")
-                    .font(.headline)
+                Label(store.appLanguage.text(en: "Not now", zh: "暂不复习"), systemImage: "xmark.circle")
+                    .font(.subheadline.weight(.bold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
             .controlSize(.large)
-            .tint(.mainWarning)
+            .tint(.mainNeutral)
 
             Button {
-                skipCurrentWord()
+                advance(with: .needsAnotherLook)
             } label: {
-                Label(store.appLanguage.text(en: "Skip", zh: "跳过"), systemImage: "forward.fill")
-                    .font(.headline)
+                Label(store.appLanguage.text(en: "Add to Review", zh: "加入复习"), systemImage: "bookmark.fill")
+                    .font(.subheadline.weight(.bold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
@@ -999,9 +1001,7 @@ private struct LightReviewDetailBlock: View {
 
 private struct LightReviewCompleteView: View {
     @EnvironmentObject private var store: WordStore
-    let reviewedCount: Int
-    let recognizedCount: Int
-    let needsAnotherLookCount: Int
+    let keptCount: Int
     let skippedCount: Int
     let onDone: () -> Void
 
@@ -1014,15 +1014,14 @@ private struct LightReviewCompleteView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text(store.appLanguage.text(en: "Review complete", zh: "复习完成"))
                     .font(.largeTitle.bold())
-                Text(store.appLanguage.text(en: "Those words are now counted in your heatmap.", zh: "这些词已经记录到你的复习热力图里了。"))
+                Text(store.appLanguage.text(en: "The words you kept are now in your review plan.", zh: "你保留的词已经加入复习计划。"))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
 
             HStack(spacing: 12) {
-                SummaryMetricCard(title: store.appLanguage.text(en: "Reviewed", zh: "已刷"), value: "\(reviewedCount)", color: .mainAccent)
-                SummaryMetricCard(title: store.appLanguage.text(en: "Skipped", zh: "已跳过"), value: "\(skippedCount)", color: .mainAction)
-                SummaryMetricCard(title: store.appLanguage.text(en: "Need review", zh: "还不熟"), value: "\(needsAnotherLookCount)", color: .mainWarning)
+                SummaryMetricCard(title: store.appLanguage.text(en: "Added", zh: "已加入"), value: "\(keptCount)", color: .mainAccent)
+                SummaryMetricCard(title: store.appLanguage.text(en: "Not now", zh: "暂不复习"), value: "\(skippedCount)", color: .mainNeutral)
             }
 
             Button {
