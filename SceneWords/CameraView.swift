@@ -1391,23 +1391,41 @@ private struct WordConfirmationDetailCard: View {
             VStack(alignment: .leading, spacing: 10) {
                 ConfirmationDetailRow(
                     title: store.appLanguage.text(en: "Original line", zh: "原场景句子"),
-                    value: word.contextLine,
+                    primaryValue: word.contextLine,
+                    secondaryValue: localizedContextLine,
                     symbol: "quote.opening"
                 )
                 ConfirmationDetailRow(
                     title: store.appLanguage.text(en: "Example", zh: "生活例句"),
-                    value: word.nextUseText(store.appLanguage),
+                    primaryValue: word.nextUse,
+                    secondaryValue: localizedNextUse,
                     symbol: "text.bubble.fill"
                 )
                 ConfirmationDetailRow(
                     title: store.appLanguage.text(en: "Scene", zh: "场景"),
-                    value: word.sourceSceneText(store.appLanguage),
+                    primaryValue: word.sourceSceneText(store.appLanguage),
+                    secondaryValue: nil,
                     symbol: "viewfinder"
                 )
             }
         }
         .padding(16)
         .paperPanel(cornerRadius: 24, shadowOpacity: 0.06)
+    }
+
+    private var localizedContextLine: String? {
+        localizedDetail(word.contextLineText(store.appLanguage), englishValue: word.contextLine)
+    }
+
+    private var localizedNextUse: String? {
+        localizedDetail(word.nextUseText(store.appLanguage), englishValue: word.nextUse)
+    }
+
+    private func localizedDetail(_ localizedValue: String, englishValue: String) -> String? {
+        guard store.appLanguage == .simplifiedChinese else { return nil }
+        let localized = localizedValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let english = englishValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        return localized == english ? nil : localized
     }
 }
 
@@ -1437,7 +1455,8 @@ private struct ManualWordScenePlaceholder: View {
 
 private struct ConfirmationDetailRow: View {
     let title: String
-    let value: String
+    let primaryValue: String
+    let secondaryValue: String?
     let symbol: String
 
     var body: some View {
@@ -1449,9 +1468,14 @@ private struct ConfirmationDetailRow: View {
                 Text(title)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
-                Text(value)
+                Text(primaryValue)
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.primary)
+                if let secondaryValue {
+                    Text(secondaryValue)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.secondary)
+                }
             }
             Spacer(minLength: 0)
         }

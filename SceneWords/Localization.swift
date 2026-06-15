@@ -208,6 +208,37 @@ extension VocabularyWord {
         }
     }
 
+    func contextLineText(_ language: AppLanguage) -> String {
+        switch contextLine {
+        case "Public holiday surcharge 15%": return language.text(en: contextLine, zh: "公共假期会加收 15% 的额外费用。")
+        case "Decaf +0.6": return language.text(en: contextLine, zh: "低咖啡因选项需要多加 0.6。")
+        case "Gluten-free options +1.0": return language.text(en: contextLine, zh: "无麸质选项需要多加 1.0。")
+        case "Redeem loyalty points": return language.text(en: contextLine, zh: "使用或兑换会员积分。")
+        case "Cabinet food from 4.0": return language.text(en: contextLine, zh: "柜台陈列食品 4 元起。")
+        case "Customer asked for an extra shot": return language.text(en: contextLine, zh: "顾客要求多加一份浓缩咖啡。")
+        case "Dine in or take away?": return language.text(en: contextLine, zh: "堂食还是外带？")
+        case "Rush hour starts around 8:30": return language.text(en: contextLine, zh: "高峰时段大约从 8:30 开始。")
+        case "Loading zone 8am-6pm": return language.text(en: contextLine, zh: "早上 8 点到下午 6 点是装卸区。")
+        case "Permit holders only": return language.text(en: contextLine, zh: "只有持许可证的人可以使用。")
+        case "Tow-away area": return language.text(en: contextLine, zh: "这里可能会被拖车移走。")
+        case "Current prescription medicines": return language.text(en: contextLine, zh: "目前正在使用的处方药。")
+        case "Do you need a referral?": return language.text(en: contextLine, zh: "你是否需要转诊？")
+        case "Report any side effect": return language.text(en: contextLine, zh: "出现任何副作用都要报告。")
+        case "Clearance price": return language.text(en: contextLine, zh: "清仓价格。")
+        case "Keep perishable items chilled": return language.text(en: contextLine, zh: "易腐坏的物品需要冷藏。")
+        case "Keep your receipt": return language.text(en: contextLine, zh: "请保留你的收据。")
+        case "Coffee": return language.text(en: contextLine, zh: "咖啡。")
+        case "Soy / oat / almond milk +0.5": return language.text(en: contextLine, zh: "豆奶、燕麦奶或杏仁奶需要多加 0.5。")
+        case "Keep cup discount -0.5": return language.text(en: contextLine, zh: "自带杯可以减 0.5。")
+        case "Latte 4.5": return language.text(en: contextLine, zh: "拿铁 4.5 元。")
+        default:
+            if language == .simplifiedChinese {
+                return "这行里出现了“\(text)”，意思是“\(meaningText(language))”。"
+            }
+            return contextLine
+        }
+    }
+
     func nextReviewText(_ language: AppLanguage) -> String {
         switch nextReview {
         case "today": language.text(en: "today", zh: "今天")

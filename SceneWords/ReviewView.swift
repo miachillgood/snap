@@ -189,7 +189,7 @@ struct LightReviewSessionView: View {
             Button {
                 advance(with: .needsAnotherLook)
             } label: {
-                Label(store.appLanguage.text(en: "See again", zh: "再看一次"), systemImage: "arrow.counterclockwise")
+                Label(store.appLanguage.text(en: "Need review", zh: "还不熟"), systemImage: "arrow.counterclockwise")
                     .font(.headline)
                     .frame(maxWidth: .infinity)
             }
@@ -882,7 +882,7 @@ private struct LightReviewWordCard: View {
                 HStack(alignment: .top, spacing: 12) {
                     VStack(alignment: .leading, spacing: 7) {
                         Text(word.text)
-                            .font(.system(size: 44, weight: .heavy, design: .rounded))
+                            .font(.system(size: wordTitleSize, weight: .heavy, design: .rounded))
                             .foregroundStyle(.primary)
                             .lineLimit(2)
                             .minimumScaleFactor(0.7)
@@ -920,14 +920,16 @@ private struct LightReviewWordCard: View {
             VStack(alignment: .leading, spacing: 14) {
                 LightReviewDetailBlock(
                     title: store.appLanguage.text(en: "You saw", zh: "你看到的是"),
-                    value: word.contextLine,
+                    primaryValue: word.contextLine,
+                    secondaryValue: localizedContextLine,
                     color: word.category.color,
                     symbol: "text.viewfinder"
                 )
 
                 LightReviewDetailBlock(
                     title: store.appLanguage.text(en: "Use it like this", zh: "可以这样用"),
-                    value: word.nextUseText(store.appLanguage),
+                    primaryValue: word.nextUse,
+                    secondaryValue: localizedNextUse,
                     color: Color.mainAccent,
                     symbol: "quote.bubble.fill"
                 )
@@ -940,11 +942,31 @@ private struct LightReviewWordCard: View {
             in: RoundedRectangle(cornerRadius: 28, style: .continuous)
         )
     }
+
+    private var wordTitleSize: CGFloat {
+        word.text.count > 10 ? 38 : 42
+    }
+
+    private var localizedContextLine: String? {
+        localizedDetail(word.contextLineText(store.appLanguage), englishValue: word.contextLine)
+    }
+
+    private var localizedNextUse: String? {
+        localizedDetail(word.nextUseText(store.appLanguage), englishValue: word.nextUse)
+    }
+
+    private func localizedDetail(_ localizedValue: String, englishValue: String) -> String? {
+        guard store.appLanguage == .simplifiedChinese else { return nil }
+        let localized = localizedValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let english = englishValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        return localized == english ? nil : localized
+    }
 }
 
 private struct LightReviewDetailBlock: View {
     let title: String
-    let value: String
+    let primaryValue: String
+    let secondaryValue: String?
     let color: Color
     let symbol: String
 
@@ -960,10 +982,16 @@ private struct LightReviewDetailBlock: View {
                 Text(title)
                     .font(.caption.weight(.bold))
                     .foregroundStyle(.secondary)
-                Text(value)
-                    .font(.body.weight(.semibold))
+                Text(primaryValue)
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.primary)
                     .fixedSize(horizontal: false, vertical: true)
+                if let secondaryValue {
+                    Text(secondaryValue)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
     }
@@ -994,7 +1022,7 @@ private struct LightReviewCompleteView: View {
             HStack(spacing: 12) {
                 SummaryMetricCard(title: store.appLanguage.text(en: "Reviewed", zh: "已刷"), value: "\(reviewedCount)", color: .mainAccent)
                 SummaryMetricCard(title: store.appLanguage.text(en: "Skipped", zh: "已跳过"), value: "\(skippedCount)", color: .mainAction)
-                SummaryMetricCard(title: store.appLanguage.text(en: "See again", zh: "再看"), value: "\(needsAnotherLookCount)", color: .mainWarning)
+                SummaryMetricCard(title: store.appLanguage.text(en: "Need review", zh: "还不熟"), value: "\(needsAnotherLookCount)", color: .mainWarning)
             }
 
             Button {
