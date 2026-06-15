@@ -187,7 +187,7 @@ struct LightReviewSessionView: View {
             Button {
                 skipCurrentWord()
             } label: {
-                Label(store.appLanguage.text(en: "Not now", zh: "暂不复习"), systemImage: "xmark.circle")
+                Text(store.appLanguage.text(en: "Not now", zh: "暂不复习"))
                     .font(.subheadline.weight(.bold))
                     .lineLimit(1)
                     .minimumScaleFactor(0.82)
@@ -200,7 +200,7 @@ struct LightReviewSessionView: View {
             Button {
                 advance(with: .needsAnotherLook)
             } label: {
-                Label(store.appLanguage.text(en: "Add to Review", zh: "加入复习"), systemImage: "bookmark.fill")
+                Text(store.appLanguage.text(en: "Add to Review", zh: "加入复习"))
                     .font(.subheadline.weight(.bold))
                     .lineLimit(1)
                     .minimumScaleFactor(0.82)
