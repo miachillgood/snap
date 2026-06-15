@@ -22,11 +22,11 @@ struct CameraView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
+                manualSearchEntry
                 if shouldShowReadinessCaptureTip {
                     readinessCaptureTip
                 }
                 captureLensCard
-                manualSearchEntry
                 photoHistory
             }
             .padding(20)
@@ -187,10 +187,10 @@ struct CameraView: View {
 
     private var captureLensCard: some View {
         let takePhotoTitle = store.appLanguage.text(en: "Take a photo", zh: "拍照")
-        let helperText = store.appLanguage.text(en: "Your photo becomes a word card.", zh: "拍下场景，变成你的词卡。")
+        let helperText = store.appLanguage.text(en: "Scan a real-life word or sign.", zh: "扫描真实生活里的单词或标识。")
         let savedCountText = store.appLanguage.text(en: "\(store.photos.count) saved", zh: "已保存 \(store.photos.count) 张")
 
-        return VStack(alignment: .leading, spacing: 18) {
+        return VStack(spacing: 20) {
             HStack(alignment: .top, spacing: 14) {
                 VStack(alignment: .leading, spacing: 5) {
                     Text(store.appLanguage.text(en: "Capture from real life", zh: "从真实生活里识词"))
@@ -212,35 +212,31 @@ struct CameraView: View {
                     .background(Color.mainAction.opacity(0.1), in: Capsule())
             }
 
-            ZStack(alignment: .bottomTrailing) {
-                MenuPhotoMock(
-                    compact: false,
-                    revealedChipCount: scanStage == .ready ? 4 : revealedChipCount,
-                    isScanning: scanStage != .ready || isProcessingPhoto,
-                    largeHeight: 212
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .padding(10)
-                .stickerSurface(cornerRadius: 16, rotation: -2.4)
-                .padding(.horizontal, 4)
-                .padding(.vertical, 4)
+            Button {
+                openCamera()
+            } label: {
+                ZStack {
+                    Circle()
+                        .fill(Color.mainAccent.opacity(0.1))
+                        .frame(width: 164, height: 164)
 
-                VStack(alignment: .trailing, spacing: 8) {
-                    MiniExtractedWordSticker(
-                        title: "receipt",
-                        subtitle: store.appLanguage.text(en: "receipt", zh: "收据"),
-                        color: .mainAccent
-                    )
-                    MiniExtractedWordSticker(
-                        title: "surcharge",
-                        subtitle: store.appLanguage.text(en: "extra charge", zh: "附加费"),
-                        color: .mainWarning
-                    )
+                    Circle()
+                        .stroke(Color.mainAccent.opacity(0.16), lineWidth: 16)
+                        .frame(width: 130, height: 130)
+
+                    Circle()
+                        .fill(Color.mainAccent)
+                        .frame(width: 96, height: 96)
+                        .shadow(color: Color.mainAccent.opacity(0.24), radius: 18, y: 10)
+
+                    Image(systemName: "viewfinder")
+                        .font(.system(size: 34, weight: .semibold))
+                        .foregroundStyle(.white)
                 }
-                .padding(.trailing, 2)
-                .padding(.bottom, 8)
+                .frame(maxWidth: .infinity)
             }
-            .frame(maxWidth: .infinity)
+            .buttonStyle(.plain)
+            .accessibilityLabel(takePhotoTitle)
 
             if isProcessingPhoto || scanStage != .ready {
                 captureStatus
@@ -249,7 +245,7 @@ struct CameraView: View {
             Button {
                 openCamera()
             } label: {
-                Label(takePhotoTitle, systemImage: "camera.viewfinder")
+                Text(takePhotoTitle)
                     .font(.headline)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 3)
@@ -267,31 +263,23 @@ struct CameraView: View {
         Button {
             isShowingManualSearch = true
         } label: {
-            HStack(spacing: 12) {
+            HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass")
                     .font(.headline.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 42, height: 42)
-                    .background(Color.mainAction, in: Circle())
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(store.appLanguage.text(en: "Search a word", zh: "搜索单词"))
-                        .font(.headline)
-                        .foregroundStyle(.primary)
-                    Text(store.appLanguage.text(en: "Add one word without taking a photo.", zh: "不用拍照，也可以把一个词加入词库。"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
-
-                Spacer(minLength: 8)
-
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.bold))
                     .foregroundStyle(.secondary)
+
+                Text(store.appLanguage.text(en: "Search a word", zh: "搜索单词"))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 8)
             }
-            .padding(16)
-            .paperPanel(cornerRadius: 22, shadowOpacity: 0.04)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 13)
+            .background(Color(uiColor: .systemBackground).opacity(0.9), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(Color.primary.opacity(0.05), lineWidth: 1)
+            }
         }
         .buttonStyle(.plain)
     }
@@ -531,33 +519,6 @@ private struct ActionTile: View {
         .frame(height: 108, alignment: .topLeading)
         .padding(16)
         .background(.background, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-    }
-}
-
-private struct MiniExtractedWordSticker: View {
-    let title: String
-    let subtitle: String
-    let color: Color
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-                .font(.caption.weight(.heavy))
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-            Text(subtitle)
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(color)
-                .lineLimit(1)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(Color(uiColor: .systemBackground).opacity(0.96), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(Color.white.opacity(0.86), lineWidth: 1)
-        }
-        .shadow(color: Color.black.opacity(0.12), radius: 9, y: 5)
     }
 }
 
