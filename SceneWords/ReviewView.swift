@@ -180,8 +180,8 @@ struct LightReviewSessionView: View {
             ProgressView(value: Double(currentIndex), total: Double(max(words.count, 1)))
                 .tint(.mainAccent)
         }
-        .padding(16)
-        .paperPanel(cornerRadius: 20, shadowOpacity: 0.035)
+        .padding(.horizontal, 4)
+        .padding(.top, 2)
     }
 
     private var sessionActions: some View {
@@ -866,7 +866,7 @@ private struct LightReviewWordCard: View {
     let onSpeak: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 22) {
+        VStack(alignment: .leading, spacing: 24) {
             HStack {
                 CategoryBadge(category: word.category)
                 Spacer()
@@ -914,8 +914,8 @@ private struct LightReviewWordCard: View {
                     .foregroundStyle(Color.mainAccent)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(18)
-            .stickerSurface(cornerRadius: 18, rotation: -1.2)
+
+            Divider()
 
             VStack(alignment: .leading, spacing: 14) {
                 LightReviewDetailBlock(
@@ -933,8 +933,12 @@ private struct LightReviewWordCard: View {
                 )
             }
         }
-        .padding(20)
-        .paperPanel(cornerRadius: 24, shadowOpacity: 0.07)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 24)
+        .background(
+            Color(uiColor: .systemBackground).opacity(0.9),
+            in: RoundedRectangle(cornerRadius: 28, style: .continuous)
+        )
     }
 }
 
