@@ -667,10 +667,6 @@ final class WordStore: ObservableObject {
 
     static let manualSearchScene = "Manual search"
 
-    var manualSearchSuggestions: [String] {
-        ["receipt", "refund", "aisle", "lease", "symptom", "platform"]
-    }
-
     var selectedWords: [VocabularyWord] {
         scannedWords.filter(\.isSelected)
     }
