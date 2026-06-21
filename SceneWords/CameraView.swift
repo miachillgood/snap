@@ -729,17 +729,34 @@ struct CapturedWordsSelectionView: View {
     }
 
     private var categorySuggestion: some View {
-        HStack(spacing: 10) {
-            CategoryBadge(category: currentPhoto.category)
-            Text(currentPhoto.suggestedScene)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "sparkles")
+                    .foregroundStyle(Color.mainAccent)
+                Text(store.appLanguage.text(en: "Scene detected", zh: "已识别场景"))
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button(store.appLanguage.text(en: "Change", zh: "更改")) {
+                    isEditingCategory = true
+                }
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-            Spacer()
-            Button(store.appLanguage.text(en: "Change", zh: "更改")) {
-                isEditingCategory = true
             }
-            .font(.subheadline.weight(.semibold))
+
+            HStack(spacing: 10) {
+                CategoryBadge(category: currentPhoto.category)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(currentPhoto.suggestedScene)
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    Text(store.appLanguage.text(en: "The words you keep can become one reviewable scene pack.", zh: "你保留的词会整理成一个可复习的场景包。"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                Spacer()
+            }
         }
         .padding(14)
         .background(.background, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -905,6 +922,9 @@ struct WordConfirmationFlowView: View {
     @State private var lastRemoved: RemovedWord?
     @State private var currentIndex = 0
     @State private var savedWords: [VocabularyWord] = []
+    @State private var reviewWords: [VocabularyWord] = []
+    @State private var reviewTitle = ""
+    @State private var createdPack: SharedPack?
     @State private var hasSaved = false
     @State private var isReviewing = false
     @State private var lastSpokenKey: String?
@@ -949,7 +969,10 @@ struct WordConfirmationFlowView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)
         .navigationDestination(isPresented: $isReviewing) {
-            LightReviewSessionView(words: savedWords, title: photo.title(store.appLanguage))
+            LightReviewSessionView(
+                words: reviewWords.isEmpty ? savedWords : reviewWords,
+                title: reviewTitle.isEmpty ? photo.title(store.appLanguage) : reviewTitle
+            )
         }
         .onAppear {
             speakCurrentWord()
@@ -1050,6 +1073,8 @@ struct WordConfirmationFlowView: View {
                         }
                     }
                 }
+
+                scenePackSummary
             }
 
             summaryActions
@@ -1072,22 +1097,44 @@ struct WordConfirmationFlowView: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
                 .tint(.mainAccent)
-            } else if hasSaved {
+            } else if let createdPack {
                 Button {
-                    isReviewing = true
+                    startPackReview(createdPack)
                 } label: {
-                    Label(store.appLanguage.text(en: "Start review", zh: "开始复习"), systemImage: "brain.head.profile")
+                    Label(store.appLanguage.text(en: "Start learning this pack", zh: "开始学习这个 Pack"), systemImage: "play.circle.fill")
                         .font(.headline)
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
                 .tint(.mainAccent)
+            } else if hasSaved {
+                Button {
+                    createScenePack()
+                } label: {
+                    Label(store.appLanguage.text(en: "Create scene pack", zh: "创建场景 Pack"), systemImage: "square.stack.3d.up.fill")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .tint(.mainAccent)
+
+                Button {
+                    startSavedWordsReview()
+                } label: {
+                    Label(store.appLanguage.text(en: "Review saved words", zh: "先复习已保存单词"), systemImage: "brain.head.profile")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .tint(.mainAction)
             } else {
                 Button {
-                    saveWords()
+                    createScenePack()
                 } label: {
-                    Label(saveButtonTitle, systemImage: "tray.and.arrow.down.fill")
+                    Label(store.appLanguage.text(en: "Save as scene pack", zh: "保存为场景 Pack"), systemImage: "square.stack.3d.up.fill")
                         .font(.headline)
                         .frame(maxWidth: .infinity)
                 }
@@ -1116,6 +1163,10 @@ struct WordConfirmationFlowView: View {
             return store.appLanguage.text(en: "No words saved", zh: "没有保存单词")
         }
 
+        if createdPack != nil {
+            return store.appLanguage.text(en: "Scene pack ready", zh: "场景 Pack 已准备好")
+        }
+
         if hasSaved {
             return store.appLanguage.text(en: "\(draftWords.count) words saved", zh: "已保存 \(draftWords.count) 个单词")
         }
@@ -1123,8 +1174,59 @@ struct WordConfirmationFlowView: View {
         return store.appLanguage.text(en: "\(draftWords.count) words ready to save", zh: "\(draftWords.count) 个单词待保存")
     }
 
-    private var saveButtonTitle: String {
-        store.appLanguage.text(en: "Save \(draftWords.count) words", zh: "保存 \(draftWords.count) 个单词")
+    private var scenePackSummary: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: createdPack == nil ? "square.stack.3d.up" : "checkmark.seal.fill")
+                    .font(.title3)
+                    .foregroundStyle(createdPack == nil ? Color.mainAccent : Color.mainAction)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(packStatusTitle)
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                    Text(packStatusSubtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                Spacer()
+            }
+
+            HStack(spacing: 8) {
+                CategoryBadge(category: photo.category)
+                Text(photo.suggestedScene)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Spacer()
+                Text(store.appLanguage.text(en: "\(draftWords.count) words", zh: "\(draftWords.count) 个词"))
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(Color.mainAccent)
+            }
+        }
+        .padding(14)
+        .background(Color.mainAccent.opacity(0.08), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
+
+    private var packStatusTitle: String {
+        if let createdPack {
+            return store.appLanguage.text(en: "\(createdPack.title) created", zh: "已创建 \(createdPack.title)")
+        }
+
+        return store.appLanguage.text(en: "Ready to become a scene pack", zh: "可以整理成一个场景 Pack")
+    }
+
+    private var packStatusSubtitle: String {
+        if let createdPack {
+            switch createdPack.visibility {
+            case .privatePack:
+                return store.appLanguage.text(en: "It is saved in Packs. You can make it shareable later.", zh: "它已保存到 Packs，之后可以改成可分享。")
+            case .unlisted, .publicPack:
+                return store.appLanguage.text(en: createdPack.shareLinkText, zh: createdPack.shareLinkText)
+            }
+        }
+
+        return store.appLanguage.text(en: "Use this photo scene to review these words together or share the set later.", zh: "用这张照片的场景把这些词放在一起复习，之后也能分享。")
     }
 
     private func undoBanner(_ removed: RemovedWord) -> some View {
@@ -1179,6 +1281,33 @@ struct WordConfirmationFlowView: View {
     private func saveWords() {
         savedWords = store.saveRecognizedWords(kept: draftWords, removed: removedWords, photo: photo)
         hasSaved = true
+    }
+
+    private func createScenePack() {
+        if !hasSaved {
+            saveWords()
+        }
+
+        let sourceWords = savedWords.isEmpty ? draftWords : savedWords
+        createdPack = store.createScenePack(from: photo, words: sourceWords)
+    }
+
+    private func startSavedWordsReview() {
+        if !hasSaved {
+            saveWords()
+        }
+
+        reviewWords = savedWords
+        reviewTitle = photo.suggestedScene
+        isReviewing = true
+    }
+
+    private func startPackReview(_ pack: SharedPack) {
+        store.startLearning(pack)
+        let words = store.reviewWords(for: pack)
+        reviewWords = words.isEmpty ? savedWords : words
+        reviewTitle = pack.title
+        isReviewing = true
     }
 
     private func speakCurrentWord() {
@@ -1567,6 +1696,7 @@ private struct CameraCapturePicker: UIViewControllerRepresentable {
         }
 
         private final class CameraControlsOverlay: UIView {
+            private let bottomControlsBackground = UIView()
             private weak var closeButton: UIButton?
             private weak var libraryButton: UIButton?
             private weak var captureButton: UIButton?
@@ -1583,6 +1713,10 @@ private struct CameraCapturePicker: UIViewControllerRepresentable {
                 self.captureButton = captureButton
                 self.flipButton = flipButton
 
+                bottomControlsBackground.backgroundColor = .black
+                bottomControlsBackground.isUserInteractionEnabled = false
+                addSubview(bottomControlsBackground)
+
                 [closeButton, libraryButton, captureButton, flipButton].forEach {
                     addSubview($0)
                 }
@@ -1594,6 +1728,14 @@ private struct CameraCapturePicker: UIViewControllerRepresentable {
 
                 let safe = safeAreaInsets
                 closeButton?.frame = CGRect(x: safe.left + 22, y: safe.top + 18, width: 48, height: 48)
+
+                let controlsHeight = safe.bottom + 228
+                bottomControlsBackground.frame = CGRect(
+                    x: 0,
+                    y: bounds.height - controlsHeight,
+                    width: bounds.width,
+                    height: controlsHeight + 12
+                )
 
                 let captureSize: CGFloat = 76
                 let bottomPadding = safe.bottom + 150

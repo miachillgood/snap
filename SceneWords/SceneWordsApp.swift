@@ -51,28 +51,32 @@ struct RootView: View {
                 CameraView()
             }
             .tabItem {
-                Label(store.appLanguage.text(en: "Capture", zh: "拍照"), systemImage: "viewfinder.circle.fill")
+                Image(systemName: "viewfinder.circle.fill")
+                    .accessibilityLabel(store.appLanguage.text(en: "Capture", zh: "拍照"))
             }
 
             rootScreen {
                 ReviewView()
             }
             .tabItem {
-                Label(store.appLanguage.text(en: "Review", zh: "复习"), systemImage: "brain.head.profile")
+                Image(systemName: "brain.head.profile")
+                    .accessibilityLabel(store.appLanguage.text(en: "Review", zh: "复习"))
             }
 
             rootScreen {
                 PacksView()
             }
             .tabItem {
-                Label(store.appLanguage.text(en: "Packs", zh: "词包"), systemImage: "square.stack.3d.up.fill")
+                Image(systemName: "square.stack.3d.up.fill")
+                    .accessibilityLabel(store.appLanguage.text(en: "Packs", zh: "词包"))
             }
 
             rootScreen {
                 ProfileView()
             }
             .tabItem {
-                Label(store.appLanguage.text(en: "Profile", zh: "我的"), systemImage: "person.crop.circle")
+                Image(systemName: "person.crop.circle")
+                    .accessibilityLabel(store.appLanguage.text(en: "Profile", zh: "我的"))
             }
         }
         .tint(.mainAccent)

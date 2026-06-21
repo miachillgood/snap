@@ -1361,6 +1361,50 @@ final class WordStore: ObservableObject {
         )
     }
 
+    @discardableResult
+    func createScenePack(
+        from photo: ScenePhoto,
+        words keptWords: [VocabularyWord],
+        title customTitle: String? = nil,
+        description customDescription: String = "",
+        tags customTags: [String]? = nil,
+        visibility requestedVisibility: PackVisibility = .privatePack
+    ) -> SharedPack? {
+        let activeWords = keptWords.filter { $0.group != .hidden }
+        let packWords = uniqueStrings(activeWords.map(\.text))
+        guard !packWords.isEmpty else { return nil }
+
+        let sceneTitle = photo.suggestedScene.trimmingCharacters(in: .whitespacesAndNewlines)
+        let sourceSceneTitle = sceneTitle.nonEmpty ?? photo.title(appLanguage)
+        let fallbackTitle = "\(sourceSceneTitle) Vocabulary"
+        let title = customTitle?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty ?? fallbackTitle
+        let description = customDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+        let tags = (customTags ?? defaultPackTags(for: activeWords, scene: sourceSceneTitle, category: photo.category))
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        let sourceScenes = uniqueStrings(activeWords.map(\.sourceScene) + [sourceSceneTitle])
+        let finalVisibility: PackVisibility = description.isEmpty && requestedVisibility != .privatePack ? .privatePack : requestedVisibility
+
+        let pack = SharedPack(
+            title: title,
+            description: description,
+            owner: currentProfile.name,
+            ownerAvatarInitial: avatarInitial(for: currentProfile.name),
+            creatorId: signedInUser?.id ?? currentProfile.name.lowercased(),
+            location: "Auckland, NZ",
+            savedCount: 0,
+            words: packWords,
+            category: photo.category,
+            tags: tags,
+            sourceScenes: sourceScenes.isEmpty ? [sourceSceneTitle] : sourceScenes,
+            visibility: finalVisibility,
+            shareSlug: slug(for: title)
+        )
+
+        packs.insert(pack, at: 0)
+        return pack
+    }
+
     func resetReviewSession() {
         reviewIndex = 0
         sessionRatings = []
@@ -1404,9 +1448,13 @@ final class WordStore: ObservableObject {
     }
 
     private func defaultPackTags(for words: [VocabularyWord]) -> [String] {
-        var tags = ["New Zealand", selectedScene]
-        tags.append(selectedCategory.rawValue)
-        if selectedScene.lowercased().contains("cafe") {
+        defaultPackTags(for: words, scene: selectedScene, category: selectedCategory)
+    }
+
+    private func defaultPackTags(for words: [VocabularyWord], scene: String, category: WordCategory) -> [String] {
+        var tags = ["New Zealand", scene]
+        tags.append(category.rawValue)
+        if scene.lowercased().contains("cafe") {
             tags.append("barista")
         }
         tags.append(currentProfile.level.shortTitle(.english).lowercased())
