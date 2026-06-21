@@ -100,20 +100,6 @@ struct ProfileView: View {
                     title: store.appLanguage.text(en: "Daily Review Reminder", zh: "每日复习提醒"),
                     isOn: $reviewReminderEnabled
                 )
-
-                ProfileDivider()
-
-                NavigationLink {
-                    LearningFocusView()
-                } label: {
-                    ProfileSettingsRow(
-                        symbol: store.currentProfile.goal.icon,
-                        title: store.appLanguage.text(en: "Scene Focus", zh: "学习场景"),
-                        value: store.currentProfile.goal.title(store.appLanguage),
-                        showsChevron: true
-                    )
-                }
-                .buttonStyle(.plain)
             }
             .background(.background, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
         }
@@ -310,44 +296,6 @@ private struct InterfaceLanguageView: View {
             }
         }
         .navigationTitle(store.appLanguage.text(en: "Interface Language", zh: "界面语言"))
-        .navigationBarTitleDisplayMode(.inline)
-    }
-}
-
-private struct LearningFocusView: View {
-    @EnvironmentObject private var store: WordStore
-
-    var body: some View {
-        List {
-            ForEach(LearningGoal.allCases) { goal in
-                Button {
-                    store.updateCurrentProfile(
-                        level: store.currentProfile.level,
-                        goal: goal,
-                        calibrationScore: store.currentProfile.calibrationScore
-                    )
-                } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: goal.icon)
-                            .foregroundStyle(goal == store.currentProfile.goal ? Color.mainAccent : .secondary)
-                            .frame(width: 24)
-
-                        Text(goal.title(store.appLanguage))
-                            .font(.headline)
-                            .foregroundStyle(.primary)
-
-                        Spacer()
-
-                        if goal == store.currentProfile.goal {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(Color.mainAction)
-                        }
-                    }
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .navigationTitle(store.appLanguage.text(en: "Scene Focus", zh: "学习场景"))
         .navigationBarTitleDisplayMode(.inline)
     }
 }
