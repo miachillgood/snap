@@ -78,7 +78,7 @@ struct OnboardingView: View {
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
 
-            if step != .login && !step.isSceneCalibration && step != .calibrationResult {
+            if step != .login && step != .levelIntro && !step.isSceneCalibration && step != .calibrationResult {
                 bottomBar
             }
         }
@@ -121,7 +121,9 @@ struct OnboardingView: View {
                 topBarTrailingControl
             }
 
-            if step.isSceneCalibration {
+            if step == .levelIntro {
+                levelIntroProgressIndicator
+            } else if step.isSceneCalibration {
                 flowProgressIndicator
             }
         }
@@ -132,7 +134,7 @@ struct OnboardingView: View {
 
     @ViewBuilder
     private var topBarTrailingControl: some View {
-        if step != .login && step != .language && !step.isSceneCalibration {
+        if step != .login && step != .language && step != .levelIntro && !step.isSceneCalibration {
             Menu {
                 ForEach(AppLanguage.allCases) { language in
                     Button {
@@ -174,6 +176,16 @@ struct OnboardingView: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .background(.white.opacity(0.34), in: Capsule())
+    }
+
+    private var levelIntroProgressIndicator: some View {
+        HStack(spacing: 5) {
+            ForEach(0 ..< 5, id: \.self) { index in
+                Circle()
+                    .fill(index == 0 ? Color.black.opacity(0.82) : Color.black.opacity(0.18))
+                    .frame(width: index == 0 ? 5.5 : 5, height: index == 0 ? 5.5 : 5)
+            }
+        }
     }
 
     private var loginStep: some View {
@@ -267,46 +279,69 @@ struct OnboardingView: View {
     private var levelIntroStep: some View {
         GeometryReader { proxy in
             ScrollView {
-                VStack(spacing: 18) {
-                    Spacer(minLength: 0)
+                VStack(spacing: 0) {
+                    levelIntroFoxCard(width: proxy.size.width)
+                        .padding(.top, 14)
 
-                    VStack(spacing: 10) {
-                        Text("Test Your Level")
-                            .font(.system(size: 34, weight: .bold, design: .serif))
-                            .foregroundStyle(.black)
-                            .multilineTextAlignment(.center)
-                            .lineLimit(2)
-                            .minimumScaleFactor(0.82)
-
-                        Text(store.appLanguage.text(
-                            en: "Check how familiar everyday scene words feel.\nSeenWords will suggest words you are more likely to miss.",
-                            zh: "看看你对生活场景词有多熟。\n之后会优先推荐你更可能不认识的词。"
-                        ))
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(.black.opacity(0.58))
+                    Text("Test Your\nLevel")
+                        .font(.system(size: 50, weight: .black, design: .rounded))
+                        .foregroundStyle(Color(red: 0.14, green: 0.13, blue: 0.15))
                         .multilineTextAlignment(.center)
                         .lineSpacing(3)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .minimumScaleFactor(0.72)
+                        .padding(.top, 34)
+
+                    Text(store.appLanguage.text(
+                        en: "Check how familiar everyday scene words feel.\nSeenWords will suggest words you are more likely to miss.",
+                        zh: "看看你对生活场景词有多熟。\n之后会优先推荐你更可能不认识的词。"
+                    ))
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.black.opacity(0.38))
+                    .multilineTextAlignment(.center)
+                    .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 34)
+                    .padding(.top, 16)
+
+                    Button {
+                        advance()
+                    } label: {
+                        HStack(spacing: 8) {
+                            Text(store.appLanguage.text(en: "Next", zh: "下一步"))
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 10, weight: .black))
+                        }
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 112, height: 46)
+                        .background(Color(red: 0.12, green: 0.12, blue: 0.13), in: Capsule())
                     }
-                    .padding(.horizontal, 24)
+                    .buttonStyle(.plain)
+                    .padding(.top, 22)
 
-                    Image("LevelTestFox")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(maxWidth: min(proxy.size.width * 0.78, 318))
-                        .padding(.top, 8)
-                        .accessibilityHidden(true)
-
-                    Spacer(minLength: 12)
+                    Spacer(minLength: 14)
                 }
                 .padding(.horizontal, 22)
-                .padding(.top, 24)
-                .padding(.bottom, 20)
+                .padding(.bottom, 18)
                 .frame(maxWidth: .infinity)
                 .frame(minHeight: proxy.size.height)
             }
         }
         .background(onboardingBackground)
+    }
+
+    private func levelIntroFoxCard(width: CGFloat) -> some View {
+        let cardWidth = min(width - 72, 258)
+
+        return ZStack {
+            Image("LevelTestFox")
+                .resizable()
+                .scaledToFill()
+                .frame(width: cardWidth * 1.05, height: cardWidth * 1.05)
+                .accessibilityHidden(true)
+        }
+        .frame(width: cardWidth, height: cardWidth)
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
     }
 
     private var levelStep: some View {
@@ -424,7 +459,7 @@ struct OnboardingView: View {
         case .language:
             store.appLanguage.text(en: "Next", zh: "下一步")
         case .levelIntro:
-            store.appLanguage.text(en: "Start test", zh: "开始测试")
+            store.appLanguage.text(en: "Next", zh: "下一步")
         case .level, .transitLevel, .shoppingLevel, .housingLevel, .medicalLevel, .calibrationResult:
             store.appLanguage.text(en: "Next", zh: "下一步")
         }
@@ -1486,7 +1521,7 @@ private struct SceneVocabularyCalibrationView: View {
             Text(selectedWordProgressText)
                 .font(.system(size: 12, weight: .black, design: .rounded))
                 .foregroundStyle(Color.black.opacity(0.62))
-                .padding(.top, height * 0.43)
+                .padding(.top, height * 0.36)
         }
         .frame(width: width, height: height, alignment: .bottom)
     }
