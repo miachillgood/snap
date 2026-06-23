@@ -44,6 +44,11 @@ struct OnboardingView: View {
             _step = State(initialValue: .level)
             return
         }
+
+        if ProcessInfo.processInfo.arguments.contains("-previewOnboardingLevelIntro") {
+            _step = State(initialValue: .levelIntro)
+            return
+        }
 #endif
         _step = State(initialValue: startsAtLogin ? .login : .language)
     }
@@ -63,6 +68,7 @@ struct OnboardingView: View {
             TabView(selection: $step) {
                 loginStep.tag(OnboardingStep.login)
                 languageStep.tag(OnboardingStep.language)
+                levelIntroStep.tag(OnboardingStep.levelIntro)
                 levelStep.tag(OnboardingStep.level)
                 transitLevelStep.tag(OnboardingStep.transitLevel)
                 shoppingLevelStep.tag(OnboardingStep.shoppingLevel)
@@ -175,7 +181,6 @@ struct OnboardingView: View {
             let safeTop = proxy.safeAreaInsets.top
             let safeBottom = proxy.safeAreaInsets.bottom
             let heroHeight = max(proxy.size.height - 356, 286)
-            let demoHeight = min(max(heroHeight * 0.64, 220), 304)
 
             ZStack(alignment: .bottom) {
                 LoginAmbientBackground()
@@ -185,31 +190,25 @@ struct OnboardingView: View {
                     .ignoresSafeArea(edges: .bottom)
 
                 VStack(spacing: 0) {
-                    VStack(spacing: 18) {
-                        HStack(spacing: 10) {
-                            OnboardingBrandMark()
-                                .scaleEffect(0.74)
+                    VStack(spacing: 16) {
+                        Spacer(minLength: 0)
 
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("SeenWords")
-                                    .font(.system(size: 21, weight: .bold, design: .serif))
-                                    .foregroundStyle(.black.opacity(0.86))
-                                Text("Real-world English")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(.black.opacity(0.48))
-                            }
+                        OnboardingBrandMark()
+                            .scaleEffect(1.18)
 
-                            Spacer()
+                        VStack(spacing: 4) {
+                            Text("SeenWords")
+                                .font(.system(size: 30, weight: .bold, design: .serif))
+                                .foregroundStyle(.black.opacity(0.86))
+                            Text("Real-world English")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(.black.opacity(0.5))
                         }
-                        .padding(.horizontal, 28)
-                        .padding(.top, safeTop + 12)
 
-                        AnimatedScanDemo(largeHeight: demoHeight)
-                            .padding(.horizontal, 20)
-                            .shadow(color: .black.opacity(0.18), radius: 22, y: 16)
-
-                        Spacer(minLength: 8)
+                        Spacer(minLength: 20)
                     }
+                    .padding(.horizontal, 28)
+                    .padding(.top, safeTop + 18)
                     .frame(maxWidth: .infinity)
                     .frame(height: heroHeight)
 
@@ -261,6 +260,51 @@ struct OnboardingView: View {
             .padding(.horizontal, 27)
             .padding(.bottom, 12)
             .frame(maxWidth: .infinity)
+        }
+        .background(onboardingBackground)
+    }
+
+    private var levelIntroStep: some View {
+        GeometryReader { proxy in
+            ScrollView {
+                VStack(spacing: 18) {
+                    Spacer(minLength: 0)
+
+                    VStack(spacing: 10) {
+                        Text("Test Your Level")
+                            .font(.system(size: 34, weight: .bold, design: .serif))
+                            .foregroundStyle(.black)
+                            .multilineTextAlignment(.center)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.82)
+
+                        Text(store.appLanguage.text(
+                            en: "Check how familiar everyday scene words feel.\nSeenWords will suggest words you are more likely to miss.",
+                            zh: "看看你对生活场景词有多熟。\n之后会优先推荐你更可能不认识的词。"
+                        ))
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(.black.opacity(0.58))
+                        .multilineTextAlignment(.center)
+                        .lineSpacing(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(.horizontal, 24)
+
+                    Image("LevelTestFox")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxWidth: min(proxy.size.width * 0.78, 318))
+                        .padding(.top, 8)
+                        .accessibilityHidden(true)
+
+                    Spacer(minLength: 12)
+                }
+                .padding(.horizontal, 22)
+                .padding(.top, 24)
+                .padding(.bottom, 20)
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: proxy.size.height)
+            }
         }
         .background(onboardingBackground)
     }
@@ -327,7 +371,7 @@ struct OnboardingView: View {
 
     private var bottomBar: some View {
         VStack(spacing: 14) {
-            if step != .login && step != .language {
+            if step.isSceneCalibration {
                 HStack(spacing: 6) {
                     ForEach(OnboardingStep.flowSteps) { item in
                         Capsule()
@@ -375,15 +419,20 @@ struct OnboardingView: View {
 
     private var primaryButtonTitle: String {
         switch step {
-        case .login: "Continue"
-        case .language: "Next"
-        case .level, .transitLevel, .shoppingLevel, .housingLevel, .medicalLevel, .calibrationResult: "Next"
+        case .login:
+            store.appLanguage.text(en: "Continue", zh: "继续")
+        case .language:
+            store.appLanguage.text(en: "Next", zh: "下一步")
+        case .levelIntro:
+            store.appLanguage.text(en: "Start test", zh: "开始测试")
+        case .level, .transitLevel, .shoppingLevel, .housingLevel, .medicalLevel, .calibrationResult:
+            store.appLanguage.text(en: "Next", zh: "下一步")
         }
     }
 
     private var onboardingBackground: Color {
         switch step {
-        case .login, .language:
+        case .login, .language, .levelIntro:
             .onboardingCanvas
         case .level:
             .sceneOrange
@@ -402,11 +451,12 @@ struct OnboardingView: View {
 
     private var languageOptions: [LanguageOption] {
         [
-            LanguageOption(language: .english, flag: "🇺🇸", title: "English"),
-            LanguageOption(language: .simplifiedChinese, flag: "🇨🇳", title: "Chinese"),
-            LanguageOption(language: .spanish, flag: "🇪🇸", title: "Spanish"),
-            LanguageOption(language: .japanese, flag: "🇯🇵", title: "Japanese"),
-            LanguageOption(language: .korean, flag: "🇰🇷", title: "Korean")
+            LanguageOption(language: .english, flag: "🇺🇸"),
+            LanguageOption(language: .simplifiedChinese, flag: "🇨🇳"),
+            LanguageOption(language: .traditionalChinese, flag: "🇹🇼"),
+            LanguageOption(language: .spanish, flag: "🇪🇸"),
+            LanguageOption(language: .japanese, flag: "🇯🇵"),
+            LanguageOption(language: .korean, flag: "🇰🇷")
         ]
     }
 
@@ -485,6 +535,8 @@ struct OnboardingView: View {
             guard store.isSignedIn else { return }
             withAnimation(.snappy) { step = .language }
         case .language:
+            withAnimation(.snappy) { step = .levelIntro }
+        case .levelIntro:
             withAnimation(.snappy) { step = .level }
         case .level:
             withAnimation(.snappy) { step = .transitLevel }
@@ -527,8 +579,10 @@ struct OnboardingView: View {
             break
         case .language:
             withAnimation(.snappy) { step = .login }
-        case .level:
+        case .levelIntro:
             withAnimation(.snappy) { step = .language }
+        case .level:
+            withAnimation(.snappy) { step = .levelIntro }
         case .transitLevel:
             withAnimation(.snappy) { step = .level }
         case .shoppingLevel:
@@ -546,6 +600,7 @@ struct OnboardingView: View {
 private enum OnboardingStep: Int, CaseIterable, Identifiable {
     case login
     case language
+    case levelIntro
     case level
     case transitLevel
     case shoppingLevel
@@ -567,7 +622,7 @@ private enum OnboardingStep: Int, CaseIterable, Identifiable {
 private struct LanguageOption: Identifiable {
     let language: AppLanguage
     let flag: String
-    let title: String
+    var title: String { language.nativeTitle }
 
     var id: AppLanguage { language }
 }
@@ -1080,7 +1135,7 @@ private struct CalibrationResultView: View {
             return language.text(en: "daily life", zh: "日常生活")
         }
 
-        if language == .simplifiedChinese {
+        if language.usesChineseText {
             return items.joined(separator: "、")
         }
 

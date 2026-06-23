@@ -206,7 +206,7 @@ final class WordSpeechPlayer: ObservableObject {
 
     private func voiceIdentifier(for language: AppLanguage) -> String {
         switch language {
-        case .simplifiedChinese, .english:
+        case .simplifiedChinese, .traditionalChinese, .english:
             return "en-US"
         case .japanese:
             return "ja-JP"

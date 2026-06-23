@@ -3,16 +3,22 @@ import Foundation
 enum AppLanguage: String, CaseIterable, Identifiable {
     case english
     case simplifiedChinese
+    case traditionalChinese
     case japanese
     case korean
     case spanish
 
     var id: String { rawValue }
 
+    var usesChineseText: Bool {
+        self == .simplifiedChinese || self == .traditionalChinese
+    }
+
     var title: String {
         switch self {
         case .english: "English"
         case .simplifiedChinese: "简体中文"
+        case .traditionalChinese: "繁體中文"
         case .japanese: "日本語"
         case .korean: "한국어"
         case .spanish: "Español"
@@ -23,6 +29,7 @@ enum AppLanguage: String, CaseIterable, Identifiable {
         switch self {
         case .english: "English"
         case .simplifiedChinese: "简体中文"
+        case .traditionalChinese: "繁體中文"
         case .japanese: "日本語"
         case .korean: "한국어"
         case .spanish: "Español"
@@ -33,6 +40,7 @@ enum AppLanguage: String, CaseIterable, Identifiable {
         switch self {
         case .english: "EN"
         case .simplifiedChinese: "简中"
+        case .traditionalChinese: "繁中"
         case .japanese: "日"
         case .korean: "한"
         case .spanish: "ES"
@@ -45,6 +53,8 @@ enum AppLanguage: String, CaseIterable, Identifiable {
             language.text(en: "English", zh: "英语", ja: "英語", ko: "영어", es: "Inglés")
         case .simplifiedChinese:
             language.text(en: "Simplified Chinese", zh: "简体中文", ja: "簡体字中国語", ko: "중국어 간체", es: "Chino simplificado")
+        case .traditionalChinese:
+            language.text(en: "Traditional Chinese", zh: "繁體中文", ja: "繁体字中国語", ko: "중국어 번체", es: "Chino tradicional")
         case .japanese:
             language.text(en: "Japanese", zh: "日语", ja: "日本語", ko: "일본어", es: "Japonés")
         case .korean:
@@ -57,7 +67,7 @@ enum AppLanguage: String, CaseIterable, Identifiable {
     func text(en: String, zh: String, ja: String? = nil, ko: String? = nil, es: String? = nil) -> String {
         switch self {
         case .english: en
-        case .simplifiedChinese: zh
+        case .simplifiedChinese, .traditionalChinese: zh
         case .japanese: ja ?? en
         case .korean: ko ?? en
         case .spanish: es ?? en
@@ -232,7 +242,7 @@ extension VocabularyWord {
         case "Keep cup discount -0.5": return language.text(en: contextLine, zh: "自带杯可以减 0.5。")
         case "Latte 4.5": return language.text(en: contextLine, zh: "拿铁 4.5 元。")
         default:
-            if language == .simplifiedChinese {
+            if language.usesChineseText {
                 return "这行里出现了“\(text)”，意思是“\(meaningText(language))”。"
             }
             return contextLine
@@ -269,20 +279,21 @@ extension ScenePhoto {
     func subtitle(_ language: AppLanguage) -> String {
         let formatter = DateFormatter()
         formatter.locale = locale(for: language)
-        formatter.dateFormat = language == .simplifiedChinese ? "HH:mm" : "h:mm a"
+        formatter.dateFormat = language.usesChineseText ? "HH:mm" : "h:mm a"
         return formatter.string(from: captureDate)
     }
 
     func dayTitle(_ language: AppLanguage) -> String {
         let formatter = DateFormatter()
         formatter.locale = locale(for: language)
-        formatter.dateFormat = language == .simplifiedChinese ? "M月d日" : "MMM d"
+        formatter.dateFormat = language.usesChineseText ? "M月d日" : "MMM d"
         return formatter.string(from: captureDate)
     }
 
     private func locale(for language: AppLanguage) -> Locale {
         switch language {
         case .simplifiedChinese: Locale(identifier: "zh_Hans")
+        case .traditionalChinese: Locale(identifier: "zh_Hant")
         case .japanese: Locale(identifier: "ja_JP")
         case .korean: Locale(identifier: "ko_KR")
         case .spanish: Locale(identifier: "es_ES")

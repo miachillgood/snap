@@ -380,7 +380,7 @@ private struct ReviewByDateSection: View {
     private func dayTitle(_ date: Date, language: AppLanguage) -> String {
         let formatter = DateFormatter()
         formatter.locale = reviewLocale(for: language)
-        formatter.dateFormat = language == .simplifiedChinese ? "M月d日" : "MMM d"
+        formatter.dateFormat = language.usesChineseText ? "M月d日" : "MMM d"
         return formatter.string(from: date)
     }
 }
@@ -488,7 +488,7 @@ private struct ReviewDayRow: View {
     private var dayTitle: String {
         let formatter = DateFormatter()
         formatter.locale = reviewLocale(for: store.appLanguage)
-        formatter.dateFormat = store.appLanguage == .simplifiedChinese ? "M月d日" : "MMM d"
+        formatter.dateFormat = store.appLanguage.usesChineseText ? "M月d日" : "MMM d"
         return formatter.string(from: section.date)
     }
 
@@ -624,7 +624,7 @@ private struct ReviewHeatmapCard: View {
 
     private var weekdaySymbols: [String] {
         switch store.appLanguage {
-        case .simplifiedChinese:
+        case .simplifiedChinese, .traditionalChinese:
             return ["日", "一", "二", "三", "四", "五", "六"]
         default:
             return ["S", "M", "T", "W", "T", "F", "S"]
@@ -958,7 +958,7 @@ private struct LightReviewWordCard: View {
     }
 
     private func localizedDetail(_ localizedValue: String, englishValue: String) -> String? {
-        guard store.appLanguage == .simplifiedChinese else { return nil }
+        guard store.appLanguage.usesChineseText else { return nil }
         let localized = localizedValue.trimmingCharacters(in: .whitespacesAndNewlines)
         let english = englishValue.trimmingCharacters(in: .whitespacesAndNewlines)
         return localized == english ? nil : localized
@@ -1144,6 +1144,7 @@ private struct SummaryMetricCard: View {
 private func reviewLocale(for language: AppLanguage) -> Locale {
     switch language {
     case .simplifiedChinese: Locale(identifier: "zh_Hans")
+    case .traditionalChinese: Locale(identifier: "zh_Hant")
     case .japanese: Locale(identifier: "ja_JP")
     case .korean: Locale(identifier: "ko_KR")
     case .spanish: Locale(identifier: "es_ES")

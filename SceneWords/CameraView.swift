@@ -1400,7 +1400,7 @@ private struct WordConfirmationDetailCard: View {
     }
 
     private func localizedDetail(_ localizedValue: String, englishValue: String) -> String? {
-        guard store.appLanguage == .simplifiedChinese else { return nil }
+        guard store.appLanguage.usesChineseText else { return nil }
         let localized = localizedValue.trimmingCharacters(in: .whitespacesAndNewlines)
         let english = englishValue.trimmingCharacters(in: .whitespacesAndNewlines)
         return localized == english ? nil : localized

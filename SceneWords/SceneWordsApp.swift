@@ -20,6 +20,7 @@ struct RootView: View {
         Group {
 #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("-previewOnboardingLevel")
+                || ProcessInfo.processInfo.arguments.contains("-previewOnboardingLevelIntro")
                 || ProcessInfo.processInfo.arguments.contains("-previewOnboardingTransit")
                 || ProcessInfo.processInfo.arguments.contains("-previewOnboardingShopping")
                 || ProcessInfo.processInfo.arguments.contains("-previewOnboardingHousing")
