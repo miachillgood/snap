@@ -681,6 +681,21 @@ private struct SceneVocabularyScene {
         }
     }
 
+    func sceneLabel(_ language: AppLanguage) -> String {
+        language.text(en: "Scene \(sceneNumber) ", zh: "场景 \(sceneNumber) ")
+    }
+
+    func displayTitle(_ language: AppLanguage) -> String {
+        switch title {
+        case "ORDERING": language.text(en: title, zh: "点单")
+        case "TRAFFIC": language.text(en: title, zh: "交通")
+        case "SHOPPING": language.text(en: title, zh: "购物")
+        case "HOUSING": language.text(en: title, zh: "租房")
+        case "MEDICAL": language.text(en: title, zh: "看病")
+        default: title.capitalized
+        }
+    }
+
     static let ordering = SceneVocabularyScene(
         sceneNumber: "01",
         title: "ORDERING",
@@ -1474,16 +1489,16 @@ private struct SceneVocabularyCalibrationView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 0) {
-                Text("Scene \(scene.sceneNumber) ")
+                Text(scene.sceneLabel(language))
                     .foregroundStyle(.white)
                     .shadow(color: .black.opacity(0.24), radius: 6, y: 2)
-                Text(scene.title)
+                Text(scene.displayTitle(language))
                     .foregroundStyle(scene.highlightColor)
             }
             .font(.system(size: 30, weight: .bold, design: .serif))
             .fixedSize(horizontal: false, vertical: true)
 
-            Text("tap the word you know")
+            Text(language.text(en: "tap the word you know", zh: "点击你认识的单词"))
                 .font(.system(size: 20, weight: .semibold, design: .serif))
                 .foregroundStyle(.white)
                 .shadow(color: .black.opacity(0.16), radius: 4, y: 1)
