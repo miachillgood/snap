@@ -15,18 +15,21 @@ struct SceneWordsApp: App {
 struct RootView: View {
     @EnvironmentObject private var store: WordStore
     @State private var isShowingSettings = false
+#if DEBUG
+    @State private var didFinishForcedOnboardingPreview = false
+#endif
 
     var body: some View {
         Group {
 #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("-previewOnboardingLevel")
-                || ProcessInfo.processInfo.arguments.contains("-previewOnboardingLevelIntro")
-                || ProcessInfo.processInfo.arguments.contains("-previewOnboardingTransit")
-                || ProcessInfo.processInfo.arguments.contains("-previewOnboardingShopping")
-                || ProcessInfo.processInfo.arguments.contains("-previewOnboardingHousing")
-                || ProcessInfo.processInfo.arguments.contains("-previewOnboardingMedical")
-                || ProcessInfo.processInfo.arguments.contains("-previewOnboardingResult") {
-                OnboardingView(startsAtLogin: false)
+            if Self.isOnboardingPreviewLaunch && !didFinishForcedOnboardingPreview {
+                OnboardingView(startsAtLogin: false) {
+                    withAnimation(.snappy) {
+                        didFinishForcedOnboardingPreview = true
+                    }
+                }
+            } else if didFinishForcedOnboardingPreview {
+                mainTabs
             } else if !store.isSignedIn {
                 OnboardingView(startsAtLogin: true)
             } else if store.hasCompletedOnboarding {
@@ -45,6 +48,19 @@ struct RootView: View {
 #endif
         }
     }
+
+#if DEBUG
+    private static var isOnboardingPreviewLaunch: Bool {
+        let arguments = ProcessInfo.processInfo.arguments
+        return arguments.contains("-previewOnboardingLevel")
+            || arguments.contains("-previewOnboardingLevelIntro")
+            || arguments.contains("-previewOnboardingTransit")
+            || arguments.contains("-previewOnboardingShopping")
+            || arguments.contains("-previewOnboardingHousing")
+            || arguments.contains("-previewOnboardingMedical")
+            || arguments.contains("-previewOnboardingResult")
+    }
+#endif
 
     private var mainTabs: some View {
         TabView {

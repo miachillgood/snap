@@ -23,7 +23,6 @@ struct CameraView: View {
     @State private var isReviewingManualWord = false
     @State private var lastSpokenManualText: String?
     @StateObject private var manualSpeechPlayer = WordSpeechPlayer()
-    @AppStorage("didShowReadinessCaptureTip") private var didShowReadinessCaptureTip = false
 
     var body: some View {
         ScrollView {
@@ -31,9 +30,6 @@ struct CameraView: View {
                 manualSearchEntry
                 if let inlineManualLookupWord {
                     inlineManualSearchResult(for: inlineManualLookupWord)
-                }
-                if shouldShowReadinessCaptureTip {
-                    readinessCaptureTip
                 }
                 captureLensCard
                 photoHistory
@@ -87,54 +83,12 @@ struct CameraView: View {
         }
     }
 
-    private var shouldShowReadinessCaptureTip: Bool {
-        !didShowReadinessCaptureTip && store.currentProfile.calibratedAt != nil
-    }
-
     private var inlineManualLookupWord: VocabularyWord? {
         store.manualWordLookup(for: submittedManualQuery, category: manualSearchCategory)
     }
 
     private var canSubmitManualSearch: Bool {
         !manualSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    private var readinessCaptureTip: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "sparkles")
-                .font(.headline.weight(.bold))
-                .foregroundStyle(.white)
-                .frame(width: 38, height: 38)
-                .background(Color.mainAccent, in: Circle())
-
-            VStack(alignment: .leading, spacing: 5) {
-                Text(store.appLanguage.text(en: "Personalized filtering is on", zh: "个性化筛词已开启"))
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                Text(store.appLanguage.text(en: "SeenWords is filtering words using your Scene Readiness score.", zh: "已按你的生活场景适应度为你筛词。"))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Spacer(minLength: 0)
-
-            Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    didShowReadinessCaptureTip = true
-                }
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 28, height: 28)
-                    .background(Color.secondary.opacity(0.1), in: Circle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(store.appLanguage.text(en: "Dismiss", zh: "关闭"))
-        }
-        .padding(16)
-        .background(.background, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 
     private var header: some View {

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct OnboardingView: View {
     @EnvironmentObject private var store: WordStore
+    private let onFinish: () -> Void
     @State private var step: OnboardingStep
     @State private var hidesKnownWords = true
     @State private var keepsSceneContext = true
@@ -12,7 +13,8 @@ struct OnboardingView: View {
     @State private var showsEmailSignIn = false
     @State private var emailAddress = ""
 
-    init(startsAtLogin: Bool = true) {
+    init(startsAtLogin: Bool = true, onFinish: @escaping () -> Void = {}) {
+        self.onFinish = onFinish
 #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("-previewOnboardingResult") {
             _step = State(initialValue: .calibrationResult)
@@ -55,6 +57,7 @@ struct OnboardingView: View {
 
 #if DEBUG
     fileprivate init(previewStep: OnboardingStep) {
+        self.onFinish = {}
         _step = State(initialValue: previewStep)
     }
 #endif
@@ -84,12 +87,6 @@ struct OnboardingView: View {
         }
         .background {
             onboardingBackground.ignoresSafeArea()
-            if step == .login {
-                Color.black
-                    .frame(height: 96)
-                    .frame(maxHeight: .infinity, alignment: .bottom)
-                    .ignoresSafeArea(edges: .bottom)
-            }
         }
         .sheet(isPresented: $showsEmailSignIn) {
             EmailSignInSheet(
@@ -190,57 +187,81 @@ struct OnboardingView: View {
 
     private var loginStep: some View {
         GeometryReader { proxy in
-            let safeTop = proxy.safeAreaInsets.top
             let safeBottom = proxy.safeAreaInsets.bottom
-            let heroHeight = max(proxy.size.height - 356, 286)
+            let width = proxy.size.width
+            let height = proxy.size.height
+            let titleSize = min(max(width * 0.142, 42), 56)
 
-            ZStack(alignment: .bottom) {
-                LoginAmbientBackground()
-                Color.black
-                    .frame(height: max(safeBottom, 34) + 24)
-                    .frame(maxHeight: .infinity, alignment: .bottom)
-                    .ignoresSafeArea(edges: .bottom)
+            ZStack {
+                Image("WelcomeHero")
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: width, height: height)
+                    .clipped()
+                    .ignoresSafeArea()
+
+                LinearGradient(
+                    colors: [
+                        .clear,
+                        .white.opacity(0.58),
+                        .white.opacity(0.52),
+                        .clear
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: height * 0.46)
+                .position(x: width * 0.5, y: height * 0.49)
+                .allowsHitTesting(false)
 
                 VStack(spacing: 0) {
-                    VStack(spacing: 16) {
-                        Spacer(minLength: 0)
+                    Spacer(minLength: height * 0.26)
 
-                        OnboardingBrandMark()
-                            .scaleEffect(1.18)
+                    Text(store.appLanguage.text(
+                        en: "Learn real\nEnglish\naround you",
+                        zh: "从生活里\n学真实英文"
+                    ))
+                    .font(.system(size: titleSize, weight: .black, design: .rounded))
+                    .foregroundStyle(Color(red: 0.13, green: 0.12, blue: 0.14))
+                    .multilineTextAlignment(.center)
+                    .lineSpacing(1)
+                    .minimumScaleFactor(0.74)
+                    .shadow(color: .white.opacity(0.72), radius: 12, y: 3)
+                    .padding(.horizontal, 24)
 
-                        VStack(spacing: 4) {
-                            Text("SeenWords")
-                                .font(.system(size: 30, weight: .bold, design: .serif))
-                                .foregroundStyle(.black.opacity(0.86))
-                            Text("Real-world English")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(.black.opacity(0.5))
-                        }
+                    Spacer(minLength: 32)
 
-                        Spacer(minLength: 20)
+                    Button {
+                        startSignIn(with: .email)
+                    } label: {
+                        Text(activeLoginProvider == .email
+                             ? store.appLanguage.text(en: "Starting...", zh: "正在开始...")
+                             : store.appLanguage.text(en: "Get started", zh: "开始"))
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 150, height: 46)
+                            .background(Color(red: 0.12, green: 0.11, blue: 0.12), in: Capsule())
                     }
-                    .padding(.horizontal, 28)
-                    .padding(.top, safeTop + 18)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: heroHeight)
+                    .buttonStyle(.plain)
+                    .disabled(activeLoginProvider != nil)
 
-                    LoginPanel(
-                        safeBottom: safeBottom,
-                        activeProvider: activeLoginProvider,
-                        completedProvider: completedLoginProvider
-                    ) { provider in
-                        if provider == .email {
-                            showsEmailSignIn = true
-                        } else {
-                            startSignIn(with: provider)
-                        }
-                    } existingAccountAction: {
+                    Button {
                         showsEmailSignIn = true
+                    } label: {
+                        Text(store.appLanguage.text(en: "I already have an account", zh: "我已有账号"))
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.black.opacity(0.74))
+                            .frame(height: 40)
                     }
+                    .buttonStyle(.plain)
+                    .disabled(activeLoginProvider != nil)
+                    .padding(.top, 8)
+                    .padding(.bottom, max(safeBottom, 18) + 10)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .ignoresSafeArea(.container, edges: .bottom)
+        .ignoresSafeArea()
     }
 
     private var languageStep: some View {
@@ -599,6 +620,7 @@ struct OnboardingView: View {
             keepsSceneContext: keepsSceneContext,
             confirmsBeforeReview: confirmsBeforeReview
         )
+        onFinish()
     }
 
     private func retakeCalibration() {

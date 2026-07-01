@@ -1031,9 +1031,6 @@ final class WordStore: ObservableObject {
         userProfile.confirmsBeforeReview = confirmsBeforeReview
         selectedCategory = defaultCategory(for: goal)
         selectedScene = defaultScene(for: goal)
-        if calibratedAt != nil {
-            UserDefaults.standard.set(false, forKey: "didShowReadinessCaptureTip")
-        }
         hasCompletedOnboarding = true
         resetReviewSession()
     }
